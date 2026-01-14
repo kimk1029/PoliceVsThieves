@@ -1,8 +1,9 @@
-import React, {useCallback, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {ImprovedLobbyScreen} from './src/screens/ImprovedLobbyScreen';
 import {SplashScreen} from './src/screens/SplashScreen';
-import {View, Text, TouchableOpacity, StyleSheet, StatusBar, Platform} from 'react-native';
+import {View, Text, TouchableOpacity, StyleSheet, StatusBar, Platform, Animated} from 'react-native';
 import {useGameStore} from './src/store/useGameStore';
+import {usePlayerStore} from './src/store/usePlayerStore';
 
 const App = (): React.JSX.Element => {
   const [screen, setScreen] = useState('splash'); // Start with splash
@@ -20,6 +21,33 @@ const App = (): React.JSX.Element => {
     setScreen(newScreen);
     setScreenParams(params || {});
   };
+
+  const {team} = usePlayerStore();
+  const {status, phaseEndsAt} = useGameStore();
+
+  // phaseEndsAt 기반 타이머(초)
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (screen !== 'game') return;
+    const id = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(id);
+  }, [screen]);
+
+  const remainingSec = phaseEndsAt ? Math.max(0, Math.ceil((phaseEndsAt - now) / 1000)) : 0;
+
+  // HIDING 카운트다운 애니메이션(픽셀 느낌)
+  const pulse = useRef(new Animated.Value(1)).current;
+  const lastShown = useRef<number | null>(null);
+  useEffect(() => {
+    if (screen !== 'game') return;
+    if (status !== 'HIDING') return;
+    if (lastShown.current === remainingSec) return;
+    lastShown.current = remainingSec;
+    Animated.sequence([
+      Animated.timing(pulse, {toValue: 1.15, duration: 120, useNativeDriver: true}),
+      Animated.timing(pulse, {toValue: 1, duration: 120, useNativeDriver: true}),
+    ]).start();
+  }, [screen, status, remainingSec, pulse]);
 
   // ─────────────────────────────────────────────────────────────
   // 🚀 SPLASH SCREEN
@@ -39,6 +67,9 @@ const App = (): React.JSX.Element => {
   // 🎮 GAME SCREEN (Placeholder with Retro Style)
   // ─────────────────────────────────────────────────────────────
   if (screen === 'game') {
+    const roleLabel = team === 'POLICE' ? '🚔 경찰' : team === 'THIEF' ? '🏃 도둑' : '…';
+    const showHidingCountdown = status === 'HIDING' && remainingSec > 0;
+
     return (
       <View style={styles.container}>
         <StatusBar barStyle="light-content" backgroundColor="#2D2B55" />
@@ -46,10 +77,10 @@ const App = (): React.JSX.Element => {
         {/* HUD */}
         <View style={styles.hud}>
           <View style={styles.hudBadge}>
-            <Text style={styles.hudText}>🚔 POLICE</Text>
+            <Text style={styles.hudText}>{roleLabel}</Text>
           </View>
           <View style={styles.hudBadgeRight}>
-            <Text style={styles.hudText}>TIME: 10:00</Text>
+            <Text style={styles.hudText}>TIME: {remainingSec}s</Text>
           </View>
         </View>
 
@@ -76,6 +107,15 @@ const App = (): React.JSX.Element => {
             <Text style={styles.buttonText}>RETURN TO LOBBY</Text>
           </TouchableOpacity>
         </View>
+
+        {/* HIDING PHASE: 화면 딤 + 픽셀 카운트다운만 표시 */}
+        {showHidingCountdown && (
+          <View style={styles.countdownOverlay}>
+            <Animated.View style={[styles.countdownBox, {transform: [{scale: pulse}]}]}>
+              <Text style={styles.countdownText}>{remainingSec}</Text>
+            </Animated.View>
+          </View>
+        )}
       </View>
     );
   }
@@ -161,6 +201,31 @@ const styles = StyleSheet.create({
     color: '#aaa',
     marginTop: 8,
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  countdownOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.78)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  countdownBox: {
+    backgroundColor: '#000',
+    borderWidth: 4,
+    borderColor: '#00E5FF',
+    borderBottomWidth: 8,
+    borderRightWidth: 8,
+    paddingVertical: 20,
+    paddingHorizontal: 28,
+  },
+  countdownText: {
+    color: '#F9F871',
+    fontSize: 96,
+    fontWeight: '900',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+    textShadowColor: '#FF0055',
+    textShadowOffset: {width: 6, height: 6},
+    textShadowRadius: 0,
+    letterSpacing: 2,
   },
   bottomPanel: {
     padding: 16,

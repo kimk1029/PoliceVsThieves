@@ -12,14 +12,16 @@ import {
 import Clipboard from '@react-native-clipboard/clipboard';
 
 import {PixelButton} from '../../components/pixel/PixelButton';
+import {PixelInput} from '../../components/pixel/PixelInput';
 import {QRCodeView} from '../../components/QRCodeView';
 import {styles} from './styles';
-import {ChatMessage, Player} from '../../types/game.types';
+import {ChatMessage, Player, RoomSettings} from '../../types/game.types';
 
 interface LobbyViewProps {
   roomId: string;
   players: Map<string, Player>;
   playerId: string | null;
+  settings: RoomSettings | null;
   chatMessages: ChatMessage[];
   chatInput: string;
   onChangeChatInput: (t: string) => void;
@@ -27,12 +29,14 @@ interface LobbyViewProps {
   onExit: () => void;
   onShuffleTeams: () => void;
   onStartGame: () => void;
+  onUpdateSettings: (settings: Partial<RoomSettings>) => void;
 }
 
 export const LobbyView: React.FC<LobbyViewProps> = ({
   roomId,
   players,
   playerId,
+  settings,
   chatMessages,
   chatInput,
   onChangeChatInput,
@@ -40,8 +44,11 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   onExit,
   onShuffleTeams,
   onStartGame,
+  onUpdateSettings,
 }) => {
   const [showQR, setShowQR] = React.useState(false);
+  const [showSettings, setShowSettings] = React.useState(false);
+  const [hidingSecondsDraft, setHidingSecondsDraft] = React.useState('60');
   const chatScrollRef = React.useRef<ScrollView>(null);
 
   const playersList = React.useMemo(() => Array.from(players.values()), [players]);
@@ -64,6 +71,11 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     Clipboard.setString(roomId);
   };
 
+  const openSettings = () => {
+    setHidingSecondsDraft(String(settings?.hidingSeconds ?? 60));
+    setShowSettings(true);
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#120458" />
@@ -80,6 +92,11 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
           <View style={{width: 60}}>
             <PixelButton text="COPY" size="small" variant="secondary" onPress={handleCopyRoomCode} />
           </View>
+          {isHost && (
+            <View style={{width: 60, marginLeft: 6}}>
+              <PixelButton text="⚙" size="small" variant="secondary" onPress={openSettings} />
+            </View>
+          )}
         </View>
       </View>
 
@@ -199,6 +216,47 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
             <View style={styles.qrBody}>
               <QRCodeView value={roomId} size={280} />
               <Text style={styles.qrCodeText}>{roomId}</Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Settings Modal */}
+      <Modal visible={showSettings} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.pixelModal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>SETTINGS</Text>
+              <TouchableOpacity onPress={() => setShowSettings(false)}>
+                <Text style={styles.modalClose}>X</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.qrBody}>
+              <PixelInput
+                label="HIDING (SEC)"
+                value={hidingSecondsDraft}
+                onChangeText={(t) => setHidingSecondsDraft(t.replace(/[^0-9]/g, ''))}
+                keyboardType="number-pad"
+                placeholder="60"
+              />
+              <View style={{height: 8}} />
+              <View style={{width: '100%'}}>
+                <PixelButton
+                  text="APPLY"
+                  variant="success"
+                  size="medium"
+                  onPress={() => {
+                    const n = parseInt(hidingSecondsDraft || '0', 10);
+                    const clamped = Number.isFinite(n) ? Math.max(5, Math.min(600, n)) : 60;
+                    onUpdateSettings({hidingSeconds: clamped});
+                    setShowSettings(false);
+                  }}
+                />
+              </View>
+              <View style={{height: 6}} />
+              <Text style={styles.modalText}>
+                CURRENT: {settings?.hidingSeconds ?? 60}s
+              </Text>
             </View>
           </View>
         </View>

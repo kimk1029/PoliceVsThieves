@@ -126,7 +126,22 @@ export const useGameLogic = () => {
                 status: message.data.status || 'LOBBY',
                 settings: message.data.settings,
                 basecamp: message.data.basecamp,
+                phaseEndsAt: message.data.phaseEndsAt ?? null,
               });
+
+              // 내 팀/역할/상태는 스냅샷 기준으로 동기화 (상단 표시 불일치 방지)
+              try {
+                const me = (message.data.players || []).find(
+                  (p: any) => (p?.playerId || p?.id) === playerId,
+                );
+                if (me) {
+                  if (me.team) usePlayerStore.getState().setTeam(me.team);
+                  if (me.role) usePlayerStore.getState().setRole(me.role);
+                  if (me.thiefStatus) usePlayerStore.getState().setThiefStatus(me.thiefStatus);
+                }
+              } catch (e) {
+                console.warn('[GameLogic] Failed to sync player store from snapshot', e);
+              }
               
               console.log('[GameLogic] ✅ Game state processed');
             }
@@ -173,6 +188,13 @@ export const useGameLogic = () => {
             const role = message.payload?.role || message.data?.role;
             if (team) usePlayerStore.getState().setTeam(team);
             if (role) usePlayerStore.getState().setRole(role);
+            break;
+
+          // 서버 표준 메시지 (Broadcaster.broadcastTeamAssignment)
+          case 'team:assigned':
+            if (message.data?.yourTeam) {
+              usePlayerStore.getState().setTeam(message.data.yourTeam);
+            }
             break;
 
           case 'PLAYER_CAPTURED':
@@ -287,11 +309,12 @@ export const useGameLogic = () => {
         payload: {
           nickname: playerNickname,
           settings: settings || {
-            maxPlayers: 10,
-            hidingDurationSec: 180,
-            chaseDurationSec: 600,
+            maxPlayers: 20,
+            hidingSeconds: 60,
+            chaseSeconds: 600,
+            proximityRadiusMeters: 30,
             captureRadiusMeters: 10,
-            policeRatio: 0.3,
+            jailRadiusMeters: 15,
           },
         },
       };
@@ -341,6 +364,20 @@ export const useGameLogic = () => {
       payload: {},
     });
   }, [isConnected, roomId, playerId, wsClient]);
+
+  // 로비 설정 변경(방장 전용)
+  const updateRoomSettings = useCallback(
+    (settings: any) => {
+      if (!isConnected || !roomId || !playerId) return;
+      wsClient.send({
+        type: 'room:settings:update',
+        playerId,
+        roomId,
+        payload: {settings},
+      });
+    },
+    [isConnected, roomId, playerId, wsClient],
+  );
 
   // 팀 섞기 (방장 전용)
   const shuffleTeams = useCallback(() => {
@@ -477,6 +514,7 @@ export const useGameLogic = () => {
     joinRoom,
     shuffleTeams,
     startGame,
+    updateRoomSettings,
     leaveRoom,
     startLocationTracking,
     attemptCapture,

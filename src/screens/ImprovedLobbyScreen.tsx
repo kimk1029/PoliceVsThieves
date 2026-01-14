@@ -26,7 +26,7 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
   const scanProcessingRef = useRef(false);
 
   const { playerId, setNickname } = usePlayerStore();
-  const { roomId, players, status, chatMessages } = useGameStore();
+  const { roomId, players, status, chatMessages, settings } = useGameStore();
   const {
     isConnected,
     createRoom,
@@ -36,6 +36,7 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
     startGame,
     shuffleTeams,
     leaveRoom,
+    updateRoomSettings,
   } = useGameLogic();
 
   const [showReconnectingModal, setShowReconnectingModal] = useState(false);
@@ -80,10 +81,11 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
     setNickname(playerName);
     await createRoom(playerName, {
       maxPlayers: 20,
-      hidingDurationSec: 180,
-      chaseDurationSec: 600,
+      hidingSeconds: 60,
+      chaseSeconds: 600,
+      proximityRadiusMeters: 30,
       captureRadiusMeters: 10,
-      policeRatio: 0.3,
+      jailRadiusMeters: 15,
     });
   };
 
@@ -172,6 +174,7 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
         roomId={roomId}
         players={players as any}
         playerId={playerId}
+        settings={settings as any}
         chatMessages={chatMessages as any}
         chatInput={chatInput}
         onChangeChatInput={setChatInput}
@@ -182,6 +185,7 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
         }}
         onShuffleTeams={shuffleTeams}
         onStartGame={startGame}
+        onUpdateSettings={updateRoomSettings}
       />
     );
   }
