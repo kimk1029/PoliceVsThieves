@@ -5,6 +5,10 @@ require Pod::Executable.execute_command('node', ['-p',
     {paths: [process.argv[1]]},
   )', __dir__]).strip
 
+# @mj-studio/react-native-naver-map v2.x는 New Architecture(Fabric) 전용입니다.
+# iOS에서도 Pod 설치 단계에서 New Arch가 활성화되어야 합니다.
+ENV['RCT_NEW_ARCH_ENABLED'] = '1'
+
 platform :ios, min_ios_version_supported
 prepare_react_native_project!
 

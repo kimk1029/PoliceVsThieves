@@ -412,7 +412,8 @@ export const useGameLogic = () => {
 
   // 위치 업데이트
   const startLocationTracking = useCallback(async () => {
-    const hasPermission = await locationService.requestPermission();
+    // 권한은 앱 시작 시 이미 요청/승인됨. 여기서는 체크만 합니다.
+    const hasPermission = await locationService.checkPermission();
     if (!hasPermission) {
       alert('Location permission is required!');
       return;
@@ -421,6 +422,7 @@ export const useGameLogic = () => {
     // 초기 위치 가져오기
     try {
       const location = await locationService.getCurrentLocation();
+      console.log('[GameLogic] 📍 Initial location:', location);
       setMyLocation(location);
       updateLocation(location);
 
@@ -437,8 +439,9 @@ export const useGameLogic = () => {
       console.error('Failed to get location:', error);
     }
 
-    // 위치 추적 시작 (3초마다)
-    locationService.startWatching(3000, location => {
+    // 위치 추적 시작 (1초마다)
+    locationService.startWatching(1000, location => {
+      console.log('[GameLogic] 📍 Location update:', location);
       setMyLocation(location);
       updateLocation(location);
 

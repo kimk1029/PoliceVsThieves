@@ -7,6 +7,7 @@ apply plugin: "com.facebook.react"
  * By default you don't need to apply any configuration, just uncomment the lines you need.
  */
 react {
+    autolinkLibrariesWithApp()
     /* Folders */
     //   The root of your project, i.e. where "package.json" lives. Default is '..'
     // root = file("../")
@@ -74,13 +75,24 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace "com.policevsthieves"
+    namespace "com.copvsrobbers"
     defaultConfig {
-        applicationId "com.policevsthieves"
+        applicationId "com.copvsrobbers"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+
+        // =========================
+        // Naver Map config
+        // - Set NAVER_MAP_CLIENT_ID in:
+        //   - ~/.gradle/gradle.properties (recommended, not committed), or
+        //   - android/gradle.properties
+        // =========================
+        // def naverMapClientId = (project.findProperty("NAVER_MAP_CLIENT_ID") ?: "").toString()
+        // manifestPlaceholders = [
+        //     NAVER_MAP_CLIENT_ID: naverMapClientId
+        // ]
 
         // =========================
         // PNT runtime config
@@ -92,10 +104,6 @@ android {
 
         buildConfigField "String", "PNT_API_BASE_URL", "\"${pntApiBaseUrl}\""
         buildConfigField "boolean", "PNT_STAGE", "${pntStageFlag}"
-        
-        // react-native-camera has two flavors: 'general' and 'mlkit'
-        // Use 'mlkit' because 'general' (legacy vision) can fail to detect QR on newer Android devices.
-        missingDimensionStrategy 'react-native-camera', 'mlkit'
     }
     signingConfigs {
         debug {
@@ -122,48 +130,20 @@ android {
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
-    implementation("com.facebook.react:flipper-integration")
+    // RN 0.74+ 템플릿에서는 Flipper 의존성을 기본 포함하지 않습니다.
+    // (버전 미지정으로 resolve 실패 가능) 필요 시 별도 설정으로 추가하세요.
     
     // Google Play Services for Maps
     implementation("com.google.android.gms:play-services-maps:18.1.0")
-    implementation("com.google.android.gms:play-services-location:21.0.1")
+    // NOTE:
+    // play-services-location 21.x에서 FusedLocationProviderClient가 interface로 변경되어
+    // react-native-geolocation-service(RNFusedLocation)에서 런타임 크래시가 발생할 수 있습니다.
+    // 안전하게 20.x로 고정합니다.
+    implementation("com.google.android.gms:play-services-location:20.0.0")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
     } else {
         implementation jscFlavor
-    }
-}
-
-apply from: file("../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle"); applyNativeModulesAppBuildGradle(project)
-
-// Workaround: Gradle 8.3 state tracking can fail on WSL when AGP's manifest task
-// references an output file that does not exist yet (merge blame report).
-// Disable state tracking for *MainManifest tasks to avoid "mergeBlameFile MD5" failures.
-gradle.projectsEvaluated {
-    tasks.matching { it.name ==~ /process.*MainManifest/ }.configureEach { t ->
-        try {
-            t.doNotTrackState("WSL/Gradle workaround for manifest merge blame output")
-        } catch (ignored) {
-            // doNotTrackState exists on Gradle 8+, ignore otherwise
-        }
-    }
-
-    // Workaround: Kotlin incremental can fail if app/build dirs are missing (WSL/clean races).
-    // Ensure dirty-sources marker file exists before compileDebugKotlin runs.
-    tasks.matching { it.name == "compileDebugKotlin" }.configureEach { t ->
-        t.doFirst {
-            def f = file("$buildDir/kotlin/compileDebugKotlin/cacheable/dirty-sources.txt")
-            if (!f.exists()) {
-                f.parentFile.mkdirs()
-                f.text = ""
-            }
-        }
-        // Make sure generated sources exist when Kotlin compiles MainApplication.kt
-        try {
-            t.dependsOn("generateDebugBuildConfig")
-            t.dependsOn("generatePackageList")
-        } catch (ignored) {
-        }
     }
 }

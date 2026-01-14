@@ -1,8 +1,8 @@
-package com.policevsthieves.config
+package com.copvsrobbers.config
 
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
-import com.policevsthieves.BuildConfig
+import com.copvsrobbers.BuildConfig
 
 class AppConfigModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
   override fun getName(): String = "AppConfig"

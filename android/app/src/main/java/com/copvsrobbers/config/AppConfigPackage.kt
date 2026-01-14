@@ -1,4 +1,4 @@
-package com.policevsthieves.config
+package com.copvsrobbers.config
 
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule

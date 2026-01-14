@@ -1,11 +1,22 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {ImprovedLobbyScreen} from './src/screens/ImprovedLobbyScreen';
 import {SplashScreen} from './src/screens/SplashScreen';
-import {View, Text, TouchableOpacity, StyleSheet, StatusBar, Platform, Animated, Alert} from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  StatusBar,
+  Platform,
+  Animated,
+  Alert,
+  PermissionsAndroid,
+} from 'react-native';
 import {useGameStore} from './src/store/useGameStore';
 import {usePlayerStore} from './src/store/usePlayerStore';
 import {useGameLogic} from './src/hooks/useGameLogic';
 import {PixelButton} from './src/components/pixel/PixelButton';
+import {NaverMapMarkerOverlay, NaverMapView} from '@mj-studio/react-native-naver-map';
 
 const App = (): React.JSX.Element => {
   const [screen, setScreen] = useState('splash'); // Start with splash
@@ -13,6 +24,32 @@ const App = (): React.JSX.Element => {
 
   // ✅ WebSocket/게임 로직은 앱 전체에서 1번만 생성해서 유지
   const gameLogic = useGameLogic();
+
+  // 게임 진입 시 위치 트래킹 시작(1회)
+  const startedLocationRef = useRef(false);
+  const [hasLocationPermission, setHasLocationPermission] = useState(Platform.OS !== 'android');
+
+  // 위치 권한은 "앱 시작 시" 한 번만 요청 (게임 화면 진입과 겹치면 화면/지도 렌더가 꼬일 수 있음)
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    (async () => {
+      try {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+          {
+            title: '위치 권한',
+            message: '게임 진행을 위해 현재 위치 권한이 필요합니다.',
+            buttonNegative: '취소',
+            buttonPositive: '허용',
+          },
+        );
+        setHasLocationPermission(granted === PermissionsAndroid.RESULTS.GRANTED);
+      } catch (e) {
+        console.log('[App] location permission request failed', e);
+        setHasLocationPermission(false);
+      }
+    })();
+  }, []);
 
   const returnToLobby = useCallback(() => {
     // 방에서 나가고(서버에 leave), 위치 트래킹도 중단되도록 처리
@@ -24,7 +61,7 @@ const App = (): React.JSX.Element => {
     startedLocationRef.current = false;
     setScreen('lobby');
     setScreenParams({});
-  }, [gameLogic, startedLocationRef]);
+  }, [gameLogic]);
 
   const confirmEndGame = useCallback(() => {
     Alert.alert('게임 종료', '정말 게임을 종료하고 방을 나가시겠습니까?', [
@@ -38,17 +75,17 @@ const App = (): React.JSX.Element => {
     setScreenParams(params || {});
   };
 
-  const {team} = usePlayerStore();
-  const {status, phaseEndsAt, players} = useGameStore();
+  const {team, location} = usePlayerStore();
+  const {status, phaseEndsAt, players, settings} = useGameStore();
 
   // 게임 진입 시 위치 트래킹 시작(1회)
-  const startedLocationRef = useRef(false);
   useEffect(() => {
     if (screen !== 'game') return;
     if (startedLocationRef.current) return;
+    if (!hasLocationPermission) return;
     startedLocationRef.current = true;
     gameLogic.startLocationTracking();
-  }, [screen, gameLogic]);
+  }, [screen, gameLogic, hasLocationPermission]);
 
   // phaseEndsAt 기반 타이머(초)
   const [now, setNow] = useState(Date.now());
@@ -114,11 +151,30 @@ const App = (): React.JSX.Element => {
       (team === 'POLICE' && status === 'CHASE' && policeRemainingSec > 0);
     const countdownValue = team === 'POLICE' ? policeRemainingSec : remainingSec;
 
+    // 요구사항:
+    // - 숨는시간은 메인(오버레이)에서만 보여준다.
+    // - 게임 총시간은 오른쪽 상단(HUD)에서만 "계속 감소"해야 한다.
+    //   (HIDING -> CHASE로 넘어갈 때 "또 새로 카운트다운"처럼 보이지 않도록,
+    //    HIDING 중에도 totalRemainingSec는 계속 줄어들게 계산)
+    const chaseMs = (settings?.chaseSeconds ?? 0) * 1000;
+    const totalEndsAt =
+      phaseEndsAt && status === 'HIDING'
+        ? phaseEndsAt + chaseMs
+        : phaseEndsAt && status === 'CHASE'
+          ? phaseEndsAt
+          : null;
+    const totalRemainingSec = totalEndsAt ? Math.max(0, Math.ceil((totalEndsAt - now) / 1000)) : 0;
+
     const playersList = Array.from(players.values());
     const thieves = playersList.filter((p: any) => p.team === 'THIEF');
 
     const isPolice = team === 'POLICE';
     const bg = isPolice ? styles.containerPolice : styles.containerThief;
+
+    const myCoord =
+      location && typeof location.lat === 'number' && typeof location.lng === 'number'
+        ? {latitude: location.lat, longitude: location.lng}
+        : null;
 
     return (
       <View style={[styles.container, bg]}>
@@ -130,7 +186,7 @@ const App = (): React.JSX.Element => {
             <Text style={[styles.hudText, !isPolice && styles.hudTextDark]}>{roleLabel}</Text>
           </View>
           <View style={styles.hudBadgeRight}>
-            <Text style={styles.hudText}>TIME: {countdownValue}s</Text>
+            <Text style={styles.hudText}>게임 총시간: {totalRemainingSec}s</Text>
           </View>
         </View>
 
@@ -139,8 +195,33 @@ const App = (): React.JSX.Element => {
           <>
             {/* MAP AREA */}
             <View style={styles.mapContainer}>
-              <Text style={styles.mapPlaceholder}>🗺️ POLICE MAP</Text>
-              <Text style={styles.mapSubText}>도둑 위치를 추적하세요</Text>
+              {hasLocationPermission ? (
+                <NaverMapView
+                  style={styles.map}
+                  // Naver 지도 내장 "내 위치 버튼"은 Google FusedLocationSource를 사용하며,
+                  // play-services-location 버전/기기 환경에 따라 크래시가 날 수 있어 비활성화합니다.
+                  isShowLocationButton={false}
+                  // NOTE: 추적 모드(Follow)는 네이티브 위치 엔진을 사용하며,
+                  // 일부 기기/환경에서 멈춤(파란 화면/먹통) 이슈가 있을 수 있어
+                  // 앱의 LocationService(react-native-geolocation-service) 기반으로 직접 카메라/마커를 제어합니다.
+                  initialCamera={{latitude: 37.5665, longitude: 126.978, zoom: 15}}
+                  camera={myCoord ? {latitude: myCoord.latitude, longitude: myCoord.longitude, zoom: 16} : undefined}
+                  animationDuration={200}
+                >
+                  {myCoord ? (
+                    <NaverMapMarkerOverlay
+                      latitude={myCoord.latitude}
+                      longitude={myCoord.longitude}
+                      caption={{text: '나'}}
+                    />
+                  ) : null}
+                </NaverMapView>
+              ) : (
+                <View style={styles.mapFallback}>
+                  <Text style={styles.mapPlaceholder}>🗺️ 지도</Text>
+                  <Text style={styles.mapSubText}>위치 권한이 필요합니다</Text>
+                </View>
+              )}
             </View>
 
             {/* THIEVES LIST */}
@@ -181,8 +262,28 @@ const App = (): React.JSX.Element => {
         ) : (
           <>
             <View style={styles.mapContainer}>
-              <Text style={styles.mapPlaceholder}>🗺️ THIEF MAP</Text>
-              <Text style={styles.mapSubText}>숨고 도망치세요</Text>
+              {hasLocationPermission ? (
+                <NaverMapView
+                  style={styles.map}
+                  isShowLocationButton={false}
+                  initialCamera={{latitude: 37.5665, longitude: 126.978, zoom: 15}}
+                  camera={myCoord ? {latitude: myCoord.latitude, longitude: myCoord.longitude, zoom: 16} : undefined}
+                  animationDuration={200}
+                >
+                  {myCoord ? (
+                    <NaverMapMarkerOverlay
+                      latitude={myCoord.latitude}
+                      longitude={myCoord.longitude}
+                      caption={{text: '나'}}
+                    />
+                  ) : null}
+                </NaverMapView>
+              ) : (
+                <View style={styles.mapFallback}>
+                  <Text style={styles.mapPlaceholder}>🗺️ 지도</Text>
+                  <Text style={styles.mapSubText}>위치 권한이 필요합니다</Text>
+                </View>
+              )}
             </View>
             <View style={styles.listPanel}>
               <Text style={styles.listTitle}>STATUS</Text>
@@ -197,13 +298,6 @@ const App = (): React.JSX.Element => {
           <Text style={styles.statusDesc}>Find and capture all thieves.</Text>
 
           <PixelButton text="게임 종료" variant="danger" size="large" onPress={confirmEndGame} />
-          <PixelButton
-            text="게임 종료"
-            variant="secondary"
-            size="large"
-            onPress={confirmEndGame}
-            style={{marginTop: 8}}
-          />
         </View>
 
         {/* HIDING PHASE: 화면 딤 + 픽셀 카운트다운만 표시 */}
@@ -302,11 +396,19 @@ const styles = StyleSheet.create({
     color: '#000',
   },
   mapContainer: {
-    flex: 1,
+    height: '45%',
     backgroundColor: '#0f3460',
     margin: 16,
     borderWidth: 4,
     borderColor: '#000',
+    overflow: 'hidden',
+  },
+  map: {
+    flex: 1,
+    width: '100%',
+  },
+  mapFallback: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },

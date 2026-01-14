@@ -48,9 +48,9 @@ export class LocationService {
           reject(error);
         },
         {
-          enableHighAccuracy: false,
+          enableHighAccuracy: true,
           timeout: 15000,
-          maximumAge: 10000
+          maximumAge: 2000
         }
       );
     });
@@ -77,7 +77,7 @@ export class LocationService {
         console.error('Location watch error', error);
       },
       {
-        enableHighAccuracy: false,
+        enableHighAccuracy: true,
         distanceFilter: 5,
         interval: intervalMs,
         fastestInterval: intervalMs / 2

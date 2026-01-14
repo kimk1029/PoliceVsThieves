@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,15 @@ import {
   StyleSheet,
   StatusBar,
   Alert,
+  PermissionsAndroid,
+  Platform,
 } from 'react-native';
+import Geolocation from 'react-native-geolocation-service';
+import {
+  LocationTrackingMode,
+  NaverMapMarkerOverlay,
+  NaverMapView,
+} from '@mj-studio/react-native-naver-map';
 import {useGameStore} from '../store/useGameStore';
 import {usePlayerStore} from '../store/usePlayerStore';
 
@@ -14,10 +22,64 @@ const GameScreen = ({navigation, route}: any) => {
   const {status, players: playersMap} = useGameStore();
   const {playerId, team, nickname} = usePlayerStore();
   const [timer, setTimer] = useState(180); // 3분 타이머
+  const mapRef = useRef<any>(null);
+  const [hasLocationPermission, setHasLocationPermission] = useState(false);
+  const [myLocation, setMyLocation] = useState<{latitude: number; longitude: number} | null>(null);
   
   // Map을 배열로 변환
   const players = Array.from(playersMap.values());
   const phase = status; // status를 phase로 매핑
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function initLocation() {
+      try {
+        if (Platform.OS === 'android') {
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+            {
+              title: '위치 권한',
+              message: '게임 진행을 위해 현재 위치 권한이 필요합니다.',
+              buttonNegative: '취소',
+              buttonPositive: '허용',
+            },
+          );
+          if (cancelled) return;
+          const ok = granted === PermissionsAndroid.RESULTS.GRANTED;
+          setHasLocationPermission(ok);
+          if (!ok) return;
+        } else {
+          setHasLocationPermission(true);
+        }
+
+        Geolocation.getCurrentPosition(
+          pos => {
+            if (cancelled) return;
+            const {latitude, longitude} = pos.coords;
+            setMyLocation({latitude, longitude});
+            // 카메라를 현재 위치로 이동
+            mapRef.current?.animateCameraTo?.({latitude, longitude, zoom: 16});
+          },
+          err => {
+            console.log('[GameScreen] getCurrentPosition error', err);
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 15000,
+            maximumAge: 5000,
+          },
+        );
+      } catch (e) {
+        console.log('[GameScreen] initLocation error', e);
+      }
+    }
+
+    initLocation();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -128,13 +190,26 @@ const GameScreen = ({navigation, route}: any) => {
 
       {/* 맵 영역 (임시) */}
       <View style={styles.mapContainer}>
-        <Text style={styles.mapPlaceholder}>🗺️ 맵 영역</Text>
-        <Text style={styles.mapText}>
-          GPS 맵이 여기에 표시됩니다
-        </Text>
-        <Text style={styles.coordText}>
-          현재 위치: 위도 37.5665, 경도 126.9780
-        </Text>
+        {hasLocationPermission ? (
+          <NaverMapView
+            ref={mapRef}
+            style={styles.map}
+            locationOverlay={{isVisible: true}}
+            locationTrackingMode={LocationTrackingMode.Follow}>
+            {myLocation ? (
+              <NaverMapMarkerOverlay
+                latitude={myLocation.latitude}
+                longitude={myLocation.longitude}
+                caption={{text: '나'}}
+              />
+            ) : null}
+          </NaverMapView>
+        ) : (
+          <View style={styles.mapFallback}>
+            <Text style={styles.mapPlaceholder}>🗺️ 네이버지도</Text>
+            <Text style={styles.mapText}>현재 위치 권한이 필요합니다.</Text>
+          </View>
+        )}
       </View>
 
       {/* 게임 페이즈 정보 */}
@@ -218,10 +293,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f3460',
     margin: 15,
     borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
+    overflow: 'hidden',
     borderWidth: 2,
     borderColor: '#1a4d7a',
+  },
+  map: {
+    flex: 1,
+  },
+  mapFallback: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   mapPlaceholder: {
     fontSize: 48,

@@ -1,12 +1,18 @@
 buildscript {
     ext {
-        buildToolsVersion = "34.0.0"
-        minSdkVersion = 21  // react-native-camera supports minSdk 21
+        // React Native 0.80 기준(react-native/gradle/libs.versions.toml)
+        buildToolsVersion = "35.0.0"
+        minSdkVersion = 24
+        // NOTE: 현재 로컬 Android SDK의 android-35 플랫폼에
+        // core-for-system-modules.jar가 누락되어(:app:androidJdkImage) 빌드가 실패합니다.
+        // 빌드가 가능한 플랫폼(34)로 맞춥니다. (SDK를 정상 설치하면 35로 되돌릴 수 있습니다)
         compileSdkVersion = 34
         targetSdkVersion = 34
-        ndkVersion = "25.1.8937393"
-        kotlinVersion = "1.8.0"
-        agpVersion = "8.1.1"
+        // 로컬 SDK에 설치된 NDK 버전으로 맞춥니다.
+        // (RN 0.80 기본값은 27.1.12297006이지만, 설치된 버전이 없으면 빌드가 실패합니다.)
+        ndkVersion = "27.0.12077973"
+        kotlinVersion = "2.1.20"
+        agpVersion = "8.9.2"
     }
     repositories {
         google()
@@ -22,56 +28,21 @@ buildscript {
 
 apply plugin: "com.facebook.react.rootproject"
 
-// AGP 8: some libraries still rely on BuildConfig but it's disabled by default for libraries.
-// Enable BuildConfig for react-native-camera-kit as soon as its Android plugin is applied.
-subprojects { proj ->
-    if (proj.name == "react-native-camera-kit") {
-        proj.plugins.withId("com.android.library") {
-            def androidExt = proj.extensions.findByName("android")
-            if (androidExt != null && androidExt.hasProperty("buildFeatures")) {
-                androidExt.buildFeatures.buildConfig = true
-            }
-        }
+allprojects {
+    repositories {
+        // Naver Maps SDK
+        maven { url "https://repository.map.naver.com/archive/maven" }
+        // RN 0.80/AGP 8+ 에서도 하위 모듈 의존성 해석을 위해 유지
+        google()
+        mavenCentral()
     }
 }
 
-// WSL 환경에서 일부 서드파티 모듈(특히 react-native-webview)의 Kotlin/Java 컴파일 단계가
-// 필요한 intermediates 파일을 생성하기 전에 Gradle validation에 걸려 실패하는 케이스가 있습니다.
-// (예: annotationProcessors.json / dirty-sources.txt missing)
-// 아래는 해당 파일을 task 실행 직전에 보장 생성하는 워크어라운드입니다.
-gradle.projectsEvaluated {
-    def sub = project(":react-native-webview")
-    if (sub != null) {
-        // Create expected files during configuration time (Gradle 8 validation runs before task execution)
-        def annNow = sub.file("${sub.buildDir}/intermediates/annotation_processor_list/debug/annotationProcessors.json")
-        if (!annNow.exists()) {
-            annNow.parentFile.mkdirs()
-            annNow.text = "[]"
-        }
-        def dirtyNow = sub.file("${sub.buildDir}/kotlin/compileDebugKotlin/cacheable/dirty-sources.txt")
-        if (!dirtyNow.exists()) {
-            dirtyNow.parentFile.mkdirs()
-            dirtyNow.text = ""
-        }
-
-        sub.tasks.matching { it.name == "compileDebugJavaWithJavac" }.configureEach { t ->
-            t.doFirst {
-                def f = sub.file("${sub.buildDir}/intermediates/annotation_processor_list/debug/annotationProcessors.json")
-                if (!f.exists()) {
-                    f.parentFile.mkdirs()
-                    f.text = "[]"
-                }
-            }
-        }
-        sub.tasks.matching { it.name == "compileDebugKotlin" }.configureEach { t ->
-            t.doFirst {
-                def f = sub.file("${sub.buildDir}/kotlin/compileDebugKotlin/cacheable/dirty-sources.txt")
-                if (!f.exists()) {
-                    f.parentFile.mkdirs()
-                    f.text = ""
-                }
-            }
-        }
+// Force a compatible Play Services Location version.
+// - play-services-location 21.x -> FusedLocationProviderClient became an interface
+// - react-native-geolocation-service expects it as a class and can crash at runtime
+subprojects { proj ->
+    proj.configurations.configureEach { cfg ->
+        cfg.resolutionStrategy.force("com.google.android.gms:play-services-location:20.0.0")
     }
-
 }

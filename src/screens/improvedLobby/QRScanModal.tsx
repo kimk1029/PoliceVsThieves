@@ -1,6 +1,6 @@
 import React from 'react';
-import {Modal, Platform, Text, View} from 'react-native';
-import {RNCamera} from 'react-native-camera';
+import {Modal, Platform, StyleSheet, Text, View} from 'react-native';
+import {Camera, useCameraDevice, useCameraPermission, useCodeScanner} from 'react-native-vision-camera';
 import {PixelButton} from '../../components/pixel/PixelButton';
 
 interface QRScanModalProps {
@@ -19,6 +19,27 @@ export const QRScanModal: React.FC<QRScanModalProps> = ({
   onCancel,
 }) => {
   if (!visible) return null;
+
+  const device = useCameraDevice('back');
+  const {hasPermission, requestPermission} = useCameraPermission();
+
+  React.useEffect(() => {
+    // 모달이 열릴 때 카메라 권한을 확보합니다.
+    if (!hasPermission) {
+      requestPermission();
+    }
+    // qrScannerSession이 바뀌면(재시도) 다시 활성화
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qrScannerSession]);
+
+  const codeScanner = useCodeScanner({
+    codeTypes: ['qr'],
+    onCodeScanned: (codes) => {
+      const first = codes?.[0];
+      const raw = first?.value ?? '';
+      if (raw) onScannedRaw(String(raw));
+    },
+  });
 
   return (
     <Modal visible={true} transparent={false} animationType="slide">
@@ -62,27 +83,27 @@ export const QRScanModal: React.FC<QRScanModalProps> = ({
 
         {/* 카메라 영역 */}
         <View style={{flex: 1, position: 'relative'}}>
-          <RNCamera
-            key={`rn-camera-${qrScannerSession}`}
-            style={{flex: 1}}
-            type={RNCamera.Constants.Type.back}
-            flashMode={RNCamera.Constants.FlashMode.off}
-            captureAudio={false}
-            autoFocus={RNCamera.Constants.AutoFocus.on}
-            // 러프하게: 타입 필터링 없이 data에서 6자리 코드만 뽑아서 처리(인식률↑)
-            onBarCodeRead={(e: any) => {
-              const raw = e?.data || e?.rawData || '';
-              onScannedRaw(String(raw));
-            }}
-            // Google Vision 바코드 이벤트도 같이 받아서(환경마다 더 잘 잡힘) 인식률↑
-            onGoogleVisionBarcodesDetected={(ev: any) => {
-              const barcodes = ev?.barcodes || [];
-              if (!Array.isArray(barcodes) || barcodes.length === 0) return;
-              const first = barcodes[0];
-              const raw = first?.data || first?.rawData || '';
-              onScannedRaw(String(raw));
-            }}
-          />
+          {!hasPermission ? (
+            <View style={styles.center}>
+              <Text style={styles.permissionText}>카메라 권한이 필요합니다</Text>
+              <View style={{width: '70%', marginTop: 12}}>
+                <PixelButton text="권한 요청" variant="primary" size="medium" onPress={requestPermission} />
+              </View>
+            </View>
+          ) : device ? (
+            <Camera
+              key={`vision-camera-${qrScannerSession}`}
+              style={StyleSheet.absoluteFill}
+              device={device}
+              isActive={true}
+              audio={false}
+              codeScanner={codeScanner}
+            />
+          ) : (
+            <View style={styles.center}>
+              <Text style={styles.permissionText}>카메라를 불러오는 중...</Text>
+            </View>
+          )}
 
           {/* 중앙 마커 프레임 */}
           <View
@@ -110,4 +131,18 @@ export const QRScanModal: React.FC<QRScanModalProps> = ({
     </Modal>
   );
 };
+
+const styles = StyleSheet.create({
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  permissionText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+});
 

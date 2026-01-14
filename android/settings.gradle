@@ -1,4 +1,18 @@
-rootProject.name = 'PoliceVsThieves'
-apply from: file("../node_modules/@react-native-community/cli-platform-android/native_modules.gradle"); applyNativeModulesSettingsGradle(settings)
+pluginManagement {
+    includeBuild("../node_modules/@react-native/gradle-plugin")
+}
+
+plugins {
+    id("com.facebook.react.settings")
+}
+
+// RN 0.80+ Autolinking: generate build/generated/autolinking/autolinking.json at settings time
+extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
+    ex.autolinkLibrariesFromCommand()
+}
+
+rootProject.name = 'copvsrobbers'
 include ':app'
-includeBuild('../node_modules/@react-native/gradle-plugin')
+
+// Make the React Native Gradle Plugin available as an included build
+includeBuild("../node_modules/@react-native/gradle-plugin")
