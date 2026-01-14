@@ -81,6 +81,17 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+
+        // =========================
+        // PNT runtime config
+        // - Default: local dev via ADB reverse (ws://localhost:9001)
+        // - Stage: pass -PPNT_STAGE=true -PPNT_API_BASE_URL=http://kimk1029.synology.me:9991
+        // =========================
+        def pntApiBaseUrl = (project.findProperty("PNT_API_BASE_URL") ?: "http://localhost:9001").toString()
+        def pntStageFlag = (project.findProperty("PNT_STAGE") ?: "false").toString().toBoolean()
+
+        buildConfigField "String", "PNT_API_BASE_URL", "\"${pntApiBaseUrl}\""
+        buildConfigField "boolean", "PNT_STAGE", "${pntStageFlag}"
         
         // react-native-camera has two flavors: 'general' and 'mlkit'
         // Use 'mlkit' because 'general' (legacy vision) can fail to detect QR on newer Android devices.

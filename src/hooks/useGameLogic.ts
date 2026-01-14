@@ -4,8 +4,10 @@ import {LocationService} from '../services/location/LocationService';
 import {useGameStore} from '../store/useGameStore';
 import {usePlayerStore} from '../store/usePlayerStore';
 import {Location} from '../types/game.types';
+import {getApiBaseUrl, getWsUrl, isStage} from '../config/pntConfig';
 
-const WS_URL = 'ws://localhost:9001'; // 에뮬레이터 & 실기기 모두 ADB Reverse(9001)를 통해 이 주소 사용
+const API_BASE_URL = getApiBaseUrl();
+const WS_URL = getWsUrl();
 
 export const useGameLogic = () => {
   const [wsClient] = useState(() => new WebSocketClient());
@@ -35,6 +37,8 @@ export const useGameLogic = () => {
       return false;
     }
 
+    console.log('[GameLogic] Env:', isStage() ? 'STAGE' : 'LOCAL');
+    console.log('[GameLogic] API Base URL:', API_BASE_URL);
     console.log('[GameLogic] Attempting to connect to:', WS_URL);
     console.log('[GameLogic] Player ID:', playerId);
     console.log('[GameLogic] WebSocket URL:', WS_URL);
