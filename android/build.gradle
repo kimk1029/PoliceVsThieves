@@ -1,0 +1,77 @@
+buildscript {
+    ext {
+        buildToolsVersion = "34.0.0"
+        minSdkVersion = 21  // react-native-camera supports minSdk 21
+        compileSdkVersion = 34
+        targetSdkVersion = 34
+        ndkVersion = "25.1.8937393"
+        kotlinVersion = "1.8.0"
+        agpVersion = "8.1.1"
+    }
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        // Pin plugin versions to avoid pulling incompatible latest versions
+        classpath("com.android.tools.build:gradle:$agpVersion")
+        classpath("com.facebook.react:react-native-gradle-plugin")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
+    }
+}
+
+apply plugin: "com.facebook.react.rootproject"
+
+// AGP 8: some libraries still rely on BuildConfig but it's disabled by default for libraries.
+// Enable BuildConfig for react-native-camera-kit as soon as its Android plugin is applied.
+subprojects { proj ->
+    if (proj.name == "react-native-camera-kit") {
+        proj.plugins.withId("com.android.library") {
+            def androidExt = proj.extensions.findByName("android")
+            if (androidExt != null && androidExt.hasProperty("buildFeatures")) {
+                androidExt.buildFeatures.buildConfig = true
+            }
+        }
+    }
+}
+
+// WSL 환경에서 일부 서드파티 모듈(특히 react-native-webview)의 Kotlin/Java 컴파일 단계가
+// 필요한 intermediates 파일을 생성하기 전에 Gradle validation에 걸려 실패하는 케이스가 있습니다.
+// (예: annotationProcessors.json / dirty-sources.txt missing)
+// 아래는 해당 파일을 task 실행 직전에 보장 생성하는 워크어라운드입니다.
+gradle.projectsEvaluated {
+    def sub = project(":react-native-webview")
+    if (sub != null) {
+        // Create expected files during configuration time (Gradle 8 validation runs before task execution)
+        def annNow = sub.file("${sub.buildDir}/intermediates/annotation_processor_list/debug/annotationProcessors.json")
+        if (!annNow.exists()) {
+            annNow.parentFile.mkdirs()
+            annNow.text = "[]"
+        }
+        def dirtyNow = sub.file("${sub.buildDir}/kotlin/compileDebugKotlin/cacheable/dirty-sources.txt")
+        if (!dirtyNow.exists()) {
+            dirtyNow.parentFile.mkdirs()
+            dirtyNow.text = ""
+        }
+
+        sub.tasks.matching { it.name == "compileDebugJavaWithJavac" }.configureEach { t ->
+            t.doFirst {
+                def f = sub.file("${sub.buildDir}/intermediates/annotation_processor_list/debug/annotationProcessors.json")
+                if (!f.exists()) {
+                    f.parentFile.mkdirs()
+                    f.text = "[]"
+                }
+            }
+        }
+        sub.tasks.matching { it.name == "compileDebugKotlin" }.configureEach { t ->
+            t.doFirst {
+                def f = sub.file("${sub.buildDir}/kotlin/compileDebugKotlin/cacheable/dirty-sources.txt")
+                if (!f.exists()) {
+                    f.parentFile.mkdirs()
+                    f.text = ""
+                }
+            }
+        }
+    }
+
+}

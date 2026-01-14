@@ -1,0 +1,225 @@
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  Alert,
+  Platform,
+  PermissionsAndroid,
+} from 'react-native';
+import { usePlayerStore } from '../store/usePlayerStore';
+import { useGameStore } from '../store/useGameStore';
+import { useGameLogic } from '../hooks/useGameLogic';
+import { LobbyView } from './improvedLobby/LobbyView';
+import { MainEntryView } from './improvedLobby/MainEntryView';
+
+interface ImprovedLobbyScreenProps {
+  onNavigate: (screen: string, params?: any) => void;
+}
+
+export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
+  onNavigate,
+}) => {
+  const [playerName, setPlayerName] = useState('');
+  const [roomCode, setRoomCode] = useState('');
+  const [showQRScan, setShowQRScan] = useState(false);
+  const [qrScannerSession, setQrScannerSession] = useState(0);
+  const [chatInput, setChatInput] = useState('');
+  const lastScannedRef = useRef<{ code: string; at: number } | null>(null);
+  const scanProcessingRef = useRef(false);
+
+  const { playerId, setNickname } = usePlayerStore();
+  const { roomId, players, status, chatMessages } = useGameStore();
+  const {
+    isConnected,
+    createRoom,
+    joinRoom,
+    checkConnection,
+    sendChatMessage,
+    startGame,
+    shuffleTeams,
+    leaveRoom,
+  } = useGameLogic();
+
+  const [showReconnectingModal, setShowReconnectingModal] = useState(false);
+
+  useEffect(() => {
+    const initPlayer = async () => {
+      await usePlayerStore.getState().loadPlayerId();
+    };
+    initPlayer();
+  }, []);
+
+  useEffect(() => {
+    if (isConnected && showReconnectingModal) {
+      setShowReconnectingModal(false);
+    }
+  }, [isConnected, showReconnectingModal]);
+
+  useEffect(() => {
+    if (status && status !== 'LOBBY' && roomId) {
+      onNavigate('game');
+    }
+  }, [status, roomId, onNavigate]);
+
+  // 스캐너를 다시 열 때마다 "중복 방지/처리 중" 상태를 완전히 리셋 (재스캔 안정화)
+  useEffect(() => {
+    if (showQRScan) {
+      lastScannedRef.current = null;
+      scanProcessingRef.current = false;
+    }
+  }, [showQRScan, qrScannerSession]);
+
+  const handleCreateRoom = async () => {
+    if (!playerName.trim()) {
+      Alert.alert('⚠️ ERROR', 'INSERT PLAYER NAME');
+      return;
+    }
+    const actuallyConnected = await checkConnection();
+    if (!actuallyConnected) {
+      Alert.alert('👾 SYSTEM', 'CONNECTION FAILED');
+      return;
+    }
+    setNickname(playerName);
+    await createRoom(playerName, {
+      maxPlayers: 20,
+      hidingDurationSec: 180,
+      chaseDurationSec: 600,
+      captureRadiusMeters: 10,
+      policeRatio: 0.3,
+    });
+  };
+
+  const handleJoinRoom = async () => {
+    const normalizedRoomCode = roomCode.trim().toUpperCase();
+    const trimmedPlayerName = playerName.trim();
+
+    if (!trimmedPlayerName) {
+      Alert.alert('⚠️ ERROR', 'ENTER PLAYER NAME');
+      return;
+    }
+    if (!normalizedRoomCode) {
+      Alert.alert('⚠️ ERROR', 'ENTER ROOM CODE');
+      return;
+    }
+    if (normalizedRoomCode.length !== 6) {
+      Alert.alert('⚠️ ERROR', `ROOM CODE MUST BE 6 CHARACTERS`);
+      return;
+    }
+
+    setRoomCode(normalizedRoomCode);
+    setNickname(trimmedPlayerName);
+
+    const actuallyConnected = await checkConnection();
+    if (!actuallyConnected) {
+      Alert.alert('👾 SYSTEM', 'CONNECTION FAILED');
+      return;
+    }
+    await joinRoom(normalizedRoomCode, trimmedPlayerName);
+  };
+
+  const joinWithCode = async (code: string) => {
+    const normalized = code.trim().toUpperCase();
+    if (!playerName.trim()) {
+      Alert.alert('⚠️ ERROR', 'PLEASE ENTER NICKNAME FIRST\n\n닉네임을 먼저 입력해주세요');
+      return;
+    }
+    if (!normalized) {
+      Alert.alert('⚠️ ERROR', 'INVALID ROOM CODE');
+      return;
+    }
+    const actuallyConnected = await checkConnection();
+    if (!actuallyConnected) {
+      Alert.alert('👾 SYSTEM', 'CONNECTION FAILED');
+      return;
+    }
+    setNickname(playerName);
+    setRoomCode(normalized);
+    await joinRoom(normalized, playerName);
+  };
+
+  const extractRoomId = (text: string): string | null => {
+    const m = text.toUpperCase().match(/([A-Z0-9]{6})/);
+    return m?.[1] || null;
+  };
+
+  // QR 인식 로직을 한 곳에 모아서(러프하게) 인식률/재스캔 안정성 개선
+  const handleScannedRaw = (raw: string) => {
+    if (scanProcessingRef.current) return;
+
+    const rid = extractRoomId(String(raw || ''));
+    if (!rid) return; // 실패 알럿을 띄우면 연속 이벤트에서 스팸이 될 수 있어 조용히 무시
+
+    // 스캔값이 항상 우선 (기존 입력값이 있어도 덮어씀)
+    setRoomCode(rid);
+
+    // 중복 방지 (재스캔을 위해 짧게)
+    const now = Date.now();
+    const last = lastScannedRef.current;
+    if (last && last.code === rid && now - last.at < 600) return;
+    lastScannedRef.current = { code: rid, at: now };
+
+    // 닉네임이 없으면 스캐너는 열어둔 채로 입력 요청만 (이전 요구사항 유지)
+    if (!playerName.trim()) return;
+
+    // 바로 입장
+    scanProcessingRef.current = true;
+    setShowQRScan(false);
+    // 다음 스캔을 위해 카메라 세션을 확실히 갱신
+    setTimeout(() => setQrScannerSession(s => s + 1), 0);
+    joinWithCode(rid);
+  };
+  if (roomId && (status === 'LOBBY' || !status)) {
+    return (
+      <LobbyView
+        roomId={roomId}
+        players={players as any}
+        playerId={playerId}
+        chatMessages={chatMessages as any}
+        chatInput={chatInput}
+        onChangeChatInput={setChatInput}
+        onSendChat={(text) => sendChatMessage(text)}
+        onExit={() => {
+          leaveRoom();
+          onNavigate('lobby');
+        }}
+        onShuffleTeams={shuffleTeams}
+        onStartGame={startGame}
+      />
+    );
+  }
+
+  return (
+    <MainEntryView
+      isConnected={isConnected}
+      onPressStatus={async () => {
+        if (!isConnected) setShowReconnectingModal(true);
+        await checkConnection();
+      }}
+      playerName={playerName}
+      onChangePlayerName={setPlayerName}
+      roomCode={roomCode}
+      onChangeRoomCode={setRoomCode}
+      onCreateRoom={handleCreateRoom}
+      onJoinRoom={handleJoinRoom}
+      onOpenScanner={async () => {
+        if (Platform.OS === 'android') {
+          const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA);
+          if (granted !== PermissionsAndroid.RESULTS.GRANTED) return;
+        }
+        // 재스캔을 위해 상태 리셋
+        lastScannedRef.current = null;
+        scanProcessingRef.current = false;
+        setQrScannerSession((s) => s + 1);
+        setShowQRScan(true);
+      }}
+      showQRScan={showQRScan}
+      qrScannerSession={qrScannerSession}
+      onScannedRaw={handleScannedRaw}
+      onCancelScan={() => {
+        scanProcessingRef.current = false;
+        lastScannedRef.current = null;
+        setShowQRScan(false);
+        setTimeout(() => setQrScannerSession((s) => s + 1), 0);
+      }}
+      showReconnectingModal={showReconnectingModal}
+    />
+  );
+};
