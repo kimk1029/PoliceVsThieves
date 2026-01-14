@@ -143,6 +143,12 @@ export const styles = StyleSheet.create({
     borderRightWidth: 2,
     height: 40,
   },
+  playerSlotPolice: {
+    backgroundColor: '#D6EEFF', // 경찰 배경 (연한 블루)
+  },
+  playerSlotThief: {
+    backgroundColor: '#FFF3B0', // 도둑 배경 (연한 옐로우)
+  },
   playerSlotMe: {
     backgroundColor: '#FFFACD',
     borderColor: '#FF0055',

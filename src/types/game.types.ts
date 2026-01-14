@@ -28,6 +28,7 @@ export interface Player {
 
 export interface RoomSettings {
   maxPlayers: number;
+  gameMode?: 'BASIC' | 'ITEM_FIND';
   hidingSeconds: number;
   chaseSeconds: number;
   proximityRadiusMeters: number;

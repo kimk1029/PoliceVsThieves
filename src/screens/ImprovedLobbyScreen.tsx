@@ -6,16 +6,27 @@ import {
 } from 'react-native';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useGameStore } from '../store/useGameStore';
-import { useGameLogic } from '../hooks/useGameLogic';
 import { LobbyView } from './improvedLobby/LobbyView';
 import { MainEntryView } from './improvedLobby/MainEntryView';
 
 interface ImprovedLobbyScreenProps {
   onNavigate: (screen: string, params?: any) => void;
+  gameLogic: {
+    isConnected: boolean;
+    createRoom: (nickname: string, settings?: any) => Promise<void> | void;
+    joinRoom: (roomCode: string, nickname: string) => Promise<void> | void;
+    checkConnection: () => Promise<boolean>;
+    sendChatMessage: (text: string) => void;
+    startGame: () => void;
+    shuffleTeams: () => void;
+    leaveRoom: () => Promise<void> | void;
+    updateRoomSettings: (settings: any) => void;
+  };
 }
 
 export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
   onNavigate,
+  gameLogic,
 }) => {
   const [playerName, setPlayerName] = useState('');
   const [roomCode, setRoomCode] = useState('');
@@ -37,7 +48,7 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
     shuffleTeams,
     leaveRoom,
     updateRoomSettings,
-  } = useGameLogic();
+  } = gameLogic;
 
   const [showReconnectingModal, setShowReconnectingModal] = useState(false);
 

@@ -49,6 +49,8 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   const [showQR, setShowQR] = React.useState(false);
   const [showSettings, setShowSettings] = React.useState(false);
   const [hidingSecondsDraft, setHidingSecondsDraft] = React.useState('60');
+  const [totalMinutesDraft, setTotalMinutesDraft] = React.useState('5');
+  const [gameModeDraft, setGameModeDraft] = React.useState<'BASIC' | 'ITEM_FIND'>('BASIC');
   const chatScrollRef = React.useRef<ScrollView>(null);
 
   const playersList = React.useMemo(() => Array.from(players.values()), [players]);
@@ -73,6 +75,8 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
 
   const openSettings = () => {
     setHidingSecondsDraft(String(settings?.hidingSeconds ?? 60));
+    setTotalMinutesDraft(String(Math.max(1, Math.round((settings?.chaseSeconds ?? 300) / 60))));
+    setGameModeDraft((settings?.gameMode as any) || 'BASIC');
     setShowSettings(true);
   };
 
@@ -109,8 +113,14 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
           <ScrollView style={{flex: 1}} contentContainerStyle={styles.gridContainer}>
             {playersList.map((player, index) => {
               const isMe = player.playerId === playerId;
+              const teamStyle =
+                player.team === 'POLICE'
+                  ? styles.playerSlotPolice
+                  : player.team === 'THIEF'
+                    ? styles.playerSlotThief
+                    : null;
               return (
-                <View key={index} style={[styles.playerSlot, isMe && styles.playerSlotMe]}>
+                <View key={index} style={[styles.playerSlot, teamStyle, isMe && styles.playerSlotMe]}>
                   <View style={styles.avatar}>
                     <Text style={styles.avatarText}>{player.nickname?.substring(0, 1).toUpperCase()}</Text>
                   </View>
@@ -232,12 +242,40 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
               </TouchableOpacity>
             </View>
             <View style={styles.qrBody}>
+              <Text style={[styles.modalText, {marginBottom: 8}]}>GAME MODE</Text>
+              <View style={{flexDirection: 'row', width: '100%', marginBottom: 10}}>
+                <View style={{flex: 1, marginRight: 6}}>
+                  <PixelButton
+                    text="BASIC"
+                    variant={gameModeDraft === 'BASIC' ? 'success' : 'secondary'}
+                    size="small"
+                    onPress={() => setGameModeDraft('BASIC')}
+                  />
+                </View>
+                <View style={{flex: 1, marginLeft: 6}}>
+                  <PixelButton
+                    text="ITEM"
+                    variant={gameModeDraft === 'ITEM_FIND' ? 'success' : 'secondary'}
+                    size="small"
+                    onPress={() => setGameModeDraft('ITEM_FIND')}
+                  />
+                </View>
+              </View>
+
               <PixelInput
                 label="HIDING (SEC)"
                 value={hidingSecondsDraft}
                 onChangeText={(t) => setHidingSecondsDraft(t.replace(/[^0-9]/g, ''))}
                 keyboardType="number-pad"
                 placeholder="60"
+              />
+
+              <PixelInput
+                label="TOTAL (MIN)  기본 5분"
+                value={totalMinutesDraft}
+                onChangeText={(t) => setTotalMinutesDraft(t.replace(/[^0-9]/g, ''))}
+                keyboardType="number-pad"
+                placeholder="5"
               />
               <View style={{height: 8}} />
               <View style={{width: '100%'}}>
@@ -246,16 +284,25 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                   variant="success"
                   size="medium"
                   onPress={() => {
-                    const n = parseInt(hidingSecondsDraft || '0', 10);
-                    const clamped = Number.isFinite(n) ? Math.max(5, Math.min(600, n)) : 60;
-                    onUpdateSettings({hidingSeconds: clamped});
+                    const hidingN = parseInt(hidingSecondsDraft || '0', 10);
+                    const hidingClamped = Number.isFinite(hidingN) ? Math.max(5, Math.min(600, hidingN)) : 60;
+
+                    const minutesN = parseInt(totalMinutesDraft || '0', 10);
+                    const minutesClamped = Number.isFinite(minutesN) ? Math.max(1, Math.min(60, minutesN)) : 5;
+                    const chaseSeconds = minutesClamped * 60; // 분 → 초
+
+                    onUpdateSettings({
+                      gameMode: gameModeDraft,
+                      hidingSeconds: hidingClamped,
+                      chaseSeconds,
+                    });
                     setShowSettings(false);
                   }}
                 />
               </View>
               <View style={{height: 6}} />
               <Text style={styles.modalText}>
-                CURRENT: {settings?.hidingSeconds ?? 60}s
+                CURRENT: MODE {(settings?.gameMode || 'BASIC') === 'BASIC' ? 'BASIC' : 'ITEM'} / HIDE {settings?.hidingSeconds ?? 60}s / TOTAL {Math.round((settings?.chaseSeconds ?? 300) / 60)}m
               </Text>
             </View>
           </View>

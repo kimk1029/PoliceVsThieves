@@ -405,8 +405,10 @@ export const useGameLogic = () => {
       await new Promise(resolve => setTimeout(resolve, 150));
     }
 
+    // 게임/로비 이동 시 위치 트래킹 중단
+    locationService.stopWatching();
     useGameStore.getState().reset();
-  }, [isConnected, roomId, playerId, wsClient]);
+  }, [isConnected, roomId, playerId, wsClient, locationService]);
 
   // 위치 업데이트
   const startLocationTracking = useCallback(async () => {
@@ -425,12 +427,10 @@ export const useGameLogic = () => {
       // 서버에 위치 전송
       if (isConnected && roomId && playerId) {
         wsClient.send({
-          type: 'UPDATE_LOCATION',
+          type: 'location:update',
           playerId: playerId,
           roomId: roomId,
-          payload: {
-            location,
-          },
+          payload: { lat: location.lat, lng: location.lng, accuracy: location.accuracy },
         });
       }
     } catch (error) {
@@ -444,12 +444,10 @@ export const useGameLogic = () => {
 
       if (isConnected && roomId && playerId) {
         wsClient.send({
-          type: 'UPDATE_LOCATION',
+          type: 'location:update',
           playerId: playerId,
           roomId: roomId,
-          payload: {
-            location,
-          },
+          payload: { lat: location.lat, lng: location.lng, accuracy: location.accuracy },
         });
       }
     });
@@ -461,7 +459,7 @@ export const useGameLogic = () => {
       if (!isConnected || !roomId || team !== 'POLICE' || !playerId) return;
 
       wsClient.send({
-        type: 'ATTEMPT_CAPTURE',
+        type: 'capture:request',
         playerId: playerId,
         roomId: roomId,
         payload: {
