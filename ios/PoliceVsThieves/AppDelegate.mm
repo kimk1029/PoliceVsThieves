@@ -2,6 +2,7 @@
 
 #import <React/RCTBundleURLProvider.h>
 #import <ReactAppDependencyProvider/RCTAppDependencyProvider.h>
+#import <objc/message.h>
 
 @implementation AppDelegate
 
@@ -12,8 +13,26 @@
   // e.g. @mj-studio/react-native-naver-map's `RNCNaverMapView`.
   self.dependencyProvider = [RCTAppDependencyProvider new];
   NSString *bundleId = [[NSBundle mainBundle] bundleIdentifier];
-  NSString *nmfClientId = [[[NSBundle mainBundle] infoDictionary] objectForKey:@"NMFClientId"];
-  NSLog(@"[AppDelegate] bundleId=%@ NMFClientId=%@", bundleId, nmfClientId);
+  NSString *ncpKeyId = [[[NSBundle mainBundle] infoDictionary] objectForKey:@"NMFNcpKeyId"];
+  // NMapsMap expects `NMFNcpKeyId` in Info.plist. Additionally, try to set it programmatically
+  // without importing NMapsMap headers (avoids module/header issues in ObjC++).
+  BOOL didSetNcpKeyId = NO;
+  NSString *effectiveNcpKeyId = nil;
+  if ([ncpKeyId isKindOfClass:[NSString class]] && ncpKeyId.length > 0) {
+    @try {
+      Class authCls = NSClassFromString(@"NMFAuthManager");
+      if (authCls && [authCls respondsToSelector:@selector(shared)]) {
+        id shared = ((id (*)(id, SEL))objc_msgSend)(authCls, @selector(shared));
+        // KVC works for @property ncpKeyId
+        [shared setValue:ncpKeyId forKey:@"ncpKeyId"];
+        effectiveNcpKeyId = [shared valueForKey:@"ncpKeyId"];
+        didSetNcpKeyId = (effectiveNcpKeyId != nil);
+      }
+    } @catch (__unused NSException *e) {
+      // ignore
+    }
+  }
+  NSLog(@"[AppDelegate] bundleId=%@ NMFNcpKeyId=%@ didSetNcpKeyId=%@ effectiveNcpKeyId=%@", bundleId, ncpKeyId, didSetNcpKeyId ? @"true" : @"false", effectiveNcpKeyId);
   // You can add your custom initial props in the dictionary below.
   // They will be passed down to the ViewController used by React Native.
   self.initialProps = @{};

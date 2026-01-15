@@ -8,6 +8,7 @@ import {
   StyleSheet,
   StatusBar,
   Platform,
+  SafeAreaView,
   Animated,
   Alert,
   PermissionsAndroid,
@@ -98,26 +99,16 @@ const App = (): React.JSX.Element => {
   // 기본 카운트다운(서버 기준)
   const remainingSec = phaseEndsAt ? Math.max(0, Math.ceil((phaseEndsAt - now) / 1000)) : 0;
 
-  // 요구사항: 경찰은 도둑보다 +20초 더 카운트(=추가로 20초 더 화면을 가리고 대기)
-  const policeExtraMs = 20_000;
-  const policeCountdownEndsAt =
-    phaseEndsAt && team === 'POLICE' ? phaseEndsAt + policeExtraMs : phaseEndsAt;
-  const policeRemainingSec = policeCountdownEndsAt
-    ? Math.max(0, Math.ceil((policeCountdownEndsAt - now) / 1000))
-    : 0;
-
   // HIDING 카운트다운 애니메이션(픽셀 느낌)
   const pulse = useRef(new Animated.Value(1)).current;
   const lastShown = useRef<number | null>(null);
   useEffect(() => {
     if (screen !== 'game') return;
-    // 경찰은 HIDING 종료 후에도 +20초 더 카운트(CHASE 초입까지 오버레이 유지)
-    const showCountdownForTeam =
-      status === 'HIDING' ||
-      (team === 'POLICE' && status === 'CHASE' && policeRemainingSec > 0);
-    if (!showCountdownForTeam) return;
+    // 숨는시간(HIDING) 오버레이는 HIDING 동안에만 표시한다.
+    if (status !== 'HIDING') return;
+    if (remainingSec <= 0) return;
 
-    const shown = team === 'POLICE' ? policeRemainingSec : remainingSec;
+    const shown = remainingSec;
     if (lastShown.current === shown) return;
     lastShown.current = shown;
 
@@ -125,7 +116,7 @@ const App = (): React.JSX.Element => {
       Animated.timing(pulse, {toValue: 1.15, duration: 120, useNativeDriver: true}),
       Animated.timing(pulse, {toValue: 1, duration: 120, useNativeDriver: true}),
     ]).start();
-  }, [screen, status, team, remainingSec, policeRemainingSec, pulse]);
+  }, [screen, status, remainingSec, pulse]);
 
   // ─────────────────────────────────────────────────────────────
   // 🚀 SPLASH SCREEN
@@ -146,10 +137,10 @@ const App = (): React.JSX.Element => {
   // ─────────────────────────────────────────────────────────────
   if (screen === 'game') {
     const roleLabel = team === 'POLICE' ? '🚔 경찰' : team === 'THIEF' ? '🏃 도둑' : '…';
-    const showHidingCountdown =
-      (status === 'HIDING' && remainingSec > 0) ||
-      (team === 'POLICE' && status === 'CHASE' && policeRemainingSec > 0);
-    const countdownValue = team === 'POLICE' ? policeRemainingSec : remainingSec;
+    // 숨는시간(HIDING)은 딤 오버레이에서만 "처음에만" 보여주고,
+    // HIDING이 끝나면(CHASE부터) 오버레이는 절대 보여주지 않는다.
+    const showHidingCountdown = status === 'HIDING' && remainingSec > 0;
+    const countdownValue = remainingSec;
 
     // 요구사항:
     // - 숨는시간은 메인(오버레이)에서만 보여준다.
@@ -177,7 +168,7 @@ const App = (): React.JSX.Element => {
         : null;
 
     return (
-      <View style={[styles.container, bg]}>
+      <SafeAreaView style={[styles.container, bg]}>
         <StatusBar barStyle="light-content" backgroundColor={isPolice ? '#001B44' : '#2D0B3A'} />
         
         {/* HUD */}
@@ -308,7 +299,7 @@ const App = (): React.JSX.Element => {
             </Animated.View>
           </View>
         )}
-      </View>
+      </SafeAreaView>
     );
   }
 
