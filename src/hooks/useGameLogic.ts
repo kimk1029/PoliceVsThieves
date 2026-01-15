@@ -78,6 +78,16 @@ export const useGameLogic = () => {
       // 메시지 핸들러 등록
       wsClient.onMessage((message: any) => {
         console.log('[GameLogic] Received message:', message.type, message);
+        
+        // location:update 메시지 특별 로깅
+        if (message.type === 'location:update') {
+          logLocation('RX location:update RAW', {
+            message,
+            hasData: !!message.data,
+            dataKeys: message.data ? Object.keys(message.data) : [],
+            fullMessage: JSON.stringify(message),
+          });
+        }
 
         switch (message.type) {
           case 'room:created':
