@@ -1,4 +1,5 @@
 import {useState, useEffect, useCallback} from 'react';
+import {Alert} from 'react-native';
 import {WebSocketClient} from '../services/websocket/WebSocketClient';
 import {LocationService} from '../services/location/LocationService';
 import {useGameStore} from '../store/useGameStore';
@@ -27,7 +28,8 @@ export const useGameLogic = () => {
 
     console.log('[GameLogic] Auto-connecting to server...');
     connectToServer();
-  }, [playerId, connectToServer]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playerId]);
 
   // WebSocket 연결
   const connectToServer = useCallback(async () => {
@@ -93,7 +95,7 @@ export const useGameLogic = () => {
           case 'ROOM_JOINED':
             if (message.success === false) {
               console.warn('[GameLogic] Room join failed:', message.error);
-              alert(message.error || 'Room join failed');
+              Alert.alert('방 참가 실패', message.error || 'Room join failed');
               break;
             }
             console.log('[GameLogic] Room joined, roomId:', message.data?.roomId);
@@ -147,6 +149,17 @@ export const useGameLogic = () => {
             }
             break;
 
+          case 'location:update': {
+            const data = message.data;
+            if (data?.playerId && data?.location) {
+              updatePlayer(data.playerId, {
+                location: data.location,
+                team: data.team,
+              });
+            }
+            break;
+          }
+
           case 'chat:new':
             console.log('[GameLogic] ✉️ New chat message received:', message.data);
             if (message.data) {
@@ -158,15 +171,104 @@ export const useGameLogic = () => {
           case 'game:start':
             if (message.success === false) {
               console.warn('[GameLogic] game:start failed:', message.error);
-              alert(message.error || 'Game start failed');
+              Alert.alert('게임 시작 실패', message.error || 'Game start failed');
             }
             break;
+
+          case 'capture:result': {
+            const {success, data} = message;
+            if (success) {
+              if (data?.thiefId) {
+                const gameStore = useGameStore.getState();
+                gameStore.updatePlayer(data.thiefId, {
+                  thiefStatus: {
+                    state: 'CAPTURED',
+                    capturedBy: data.policeId ?? null,
+                    capturedAt: data.capturedAt ?? Date.now(),
+                    jailedAt: null,
+                  },
+                });
+                const playerStore = usePlayerStore.getState();
+                if (playerStore.playerId === data.thiefId) {
+                  playerStore.setThiefStatus({
+                    state: 'CAPTURED',
+                    capturedBy: data.policeId ?? null,
+                    capturedAt: data.capturedAt ?? Date.now(),
+                    jailedAt: null,
+                  });
+                }
+              }
+            } else if (message?.error) {
+              console.warn('[GameLogic] capture failed:', message.error);
+              Alert.alert('검거 실패', message.error);
+            }
+            break;
+          }
+
+          case 'jail:result': {
+            const {success, data} = message;
+            if (success) {
+              if (data?.thiefId) {
+                const gameStore = useGameStore.getState();
+                gameStore.updatePlayer(data.thiefId, {
+                  thiefStatus: {
+                    state: 'JAILED',
+                    capturedBy: null,
+                    capturedAt: null,
+                    jailedAt: data.jailedAt ?? Date.now(),
+                  },
+                });
+                const playerStore = usePlayerStore.getState();
+                if (playerStore.playerId === data.thiefId) {
+                  playerStore.setThiefStatus({
+                    state: 'JAILED',
+                    capturedBy: null,
+                    capturedAt: null,
+                    jailedAt: data.jailedAt ?? Date.now(),
+                  });
+                }
+              }
+            } else if (message?.error) {
+              console.warn('[GameLogic] jail failed:', message.error);
+            }
+            break;
+          }
+
+          case 'release:result': {
+            const {success, data} = message;
+            if (success) {
+              if (data?.thiefId) {
+                const gameStore = useGameStore.getState();
+                gameStore.updatePlayer(data.thiefId, {
+                  thiefStatus: {
+                    state: 'FREE',
+                    capturedBy: null,
+                    capturedAt: null,
+                    jailedAt: null,
+                  },
+                });
+                const playerStore = usePlayerStore.getState();
+                if (playerStore.playerId === data.thiefId) {
+                  playerStore.setThiefStatus({
+                    state: 'FREE',
+                    capturedBy: null,
+                    capturedAt: null,
+                    jailedAt: null,
+                  });
+                }
+              }
+            } else if (message?.error) {
+              console.warn('[GameLogic] release failed:', message.error);
+              Alert.alert('해제 실패', message.error);
+            }
+            break;
+          }
 
           case 'room:leave':
             // leave ack는 UI에서 reset 처리
             if (message.success === false) {
               console.warn('[GameLogic] room:leave failed:', message.error);
-              alert(message.error || 'Leave failed');
+              Alert.alert('방 나가기 실패', message.error || 'Leave failed');
             }
             break;
 
@@ -199,7 +301,7 @@ export const useGameLogic = () => {
 
           case 'PLAYER_CAPTURED':
             if (message.payload?.thiefId === playerId || message.data?.thiefId === playerId) {
-              alert('You have been captured!');
+              Alert.alert('검거됨', 'You have been captured!');
             }
             break;
 
@@ -208,6 +310,12 @@ export const useGameLogic = () => {
               status: 'END',
               result: message.payload?.result || message.data?.result,
             });
+            break;
+
+          case 'game:end':
+            if (message.data) {
+              setRoomInfo({status: 'END', result: message.data});
+            }
             break;
         }
       });
@@ -410,12 +518,27 @@ export const useGameLogic = () => {
     useGameStore.getState().reset();
   }, [isConnected, roomId, playerId, wsClient, locationService]);
 
+  const sendLocationUpdate = useCallback(
+    (location: Location) => {
+      const {roomId: currentRoomId} = useGameStore.getState();
+      const {playerId: currentPlayerId} = usePlayerStore.getState();
+      if (!wsClient.isConnected() || !currentRoomId || !currentPlayerId) return;
+      wsClient.send({
+        type: 'location:update',
+        playerId: currentPlayerId,
+        roomId: currentRoomId,
+        payload: {lat: location.lat, lng: location.lng, accuracy: location.accuracy},
+      });
+    },
+    [wsClient]
+  );
+
   // 위치 업데이트
   const startLocationTracking = useCallback(async () => {
     // 권한은 앱 시작 시 이미 요청/승인됨. 여기서는 체크만 합니다.
     const hasPermission = await locationService.checkPermission();
     if (!hasPermission) {
-      alert('Location permission is required!');
+      Alert.alert('위치 권한 필요', 'Location permission is required!');
       return;
     }
 
@@ -427,14 +550,7 @@ export const useGameLogic = () => {
       updateLocation(location);
 
       // 서버에 위치 전송
-      if (isConnected && roomId && playerId) {
-        wsClient.send({
-          type: 'location:update',
-          playerId: playerId,
-          roomId: roomId,
-          payload: { lat: location.lat, lng: location.lng, accuracy: location.accuracy },
-        });
-      }
+      sendLocationUpdate(location);
     } catch (error) {
       console.error('Failed to get location:', error);
     }
@@ -445,16 +561,9 @@ export const useGameLogic = () => {
       setMyLocation(location);
       updateLocation(location);
 
-      if (isConnected && roomId && playerId) {
-        wsClient.send({
-          type: 'location:update',
-          playerId: playerId,
-          roomId: roomId,
-          payload: { lat: location.lat, lng: location.lng, accuracy: location.accuracy },
-        });
-      }
+      sendLocationUpdate(location);
     });
-  }, [locationService, isConnected, roomId, playerId, wsClient, updateLocation]);
+  }, [locationService, sendLocationUpdate, updateLocation]);
 
   // 체포 시도
   const attemptCapture = useCallback(
@@ -463,6 +572,23 @@ export const useGameLogic = () => {
 
       wsClient.send({
         type: 'capture:request',
+        playerId: playerId,
+        roomId: roomId,
+        payload: {
+          thiefId,
+        },
+      });
+    },
+    [isConnected, roomId, playerId, team, wsClient]
+  );
+
+  // 검거 해제 시도 (CAPTURED -> FREE)
+  const attemptRelease = useCallback(
+    (thiefId: string) => {
+      if (!isConnected || !roomId || team !== 'POLICE' || !playerId) return;
+
+      wsClient.send({
+        type: 'capture:release',
         playerId: playerId,
         roomId: roomId,
         payload: {
@@ -519,6 +645,7 @@ export const useGameLogic = () => {
     leaveRoom,
     startLocationTracking,
     attemptCapture,
+    attemptRelease,
     checkConnection,
     sendChatMessage,
   };

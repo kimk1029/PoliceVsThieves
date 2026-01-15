@@ -113,6 +113,118 @@ const App = (): React.JSX.Element => {
   const mapRef = useRef<any>(null);
   const hasCenteredOnceRef = useRef(false);
 
+  // 위치 마커를 부드럽게 이동시키기 위한 상태/헬퍼
+  const smoothPositionsRef = useRef<
+    Map<
+      string,
+      {
+        latitude: number;
+        longitude: number;
+        anim?: {
+          startLat: number;
+          startLng: number;
+          endLat: number;
+          endLng: number;
+          startTime: number;
+          duration: number;
+        } | null;
+      }
+    >
+  >(new Map());
+  const animationFrameRef = useRef<number | null>(null);
+  const [, forceSmoothRender] = useState(0);
+
+  const startSmoothAnimation = useCallback(() => {
+    if (animationFrameRef.current) return;
+
+    const step = () => {
+      const now = Date.now();
+      let stillAnimating = false;
+
+      smoothPositionsRef.current.forEach((pos) => {
+        if (!pos.anim) return;
+        const { startLat, startLng, endLat, endLng, startTime, duration } = pos.anim;
+        const t = Math.min(1, (now - startTime) / duration);
+        const eased = 1 - Math.pow(1 - t, 2); // easeOutQuad
+
+        pos.latitude = startLat + (endLat - startLat) * eased;
+        pos.longitude = startLng + (endLng - startLng) * eased;
+
+        if (t >= 1) {
+          pos.latitude = endLat;
+          pos.longitude = endLng;
+          pos.anim = null;
+        } else {
+          stillAnimating = true;
+        }
+      });
+
+      forceSmoothRender((v) => v + 1);
+
+      if (stillAnimating) {
+        animationFrameRef.current = requestAnimationFrame(step);
+      } else {
+        animationFrameRef.current = null;
+      }
+    };
+
+    animationFrameRef.current = requestAnimationFrame(step);
+  }, []);
+
+  const setSmoothTarget = useCallback(
+    (id: string, target: { latitude: number; longitude: number }, duration = 350) => {
+      const existing = smoothPositionsRef.current.get(id);
+      if (!existing) {
+        smoothPositionsRef.current.set(id, {
+          latitude: target.latitude,
+          longitude: target.longitude,
+          anim: null,
+        });
+        forceSmoothRender((v) => v + 1);
+        return;
+      }
+
+      if (
+        existing.latitude === target.latitude &&
+        existing.longitude === target.longitude
+      ) {
+        return;
+      }
+
+      existing.anim = {
+        startLat: existing.latitude,
+        startLng: existing.longitude,
+        endLat: target.latitude,
+        endLng: target.longitude,
+        startTime: Date.now(),
+        duration,
+      };
+
+      startSmoothAnimation();
+    },
+    [startSmoothAnimation]
+  );
+
+  const getSmoothCoord = useCallback(
+    (id: string, fallback: { latitude: number; longitude: number }) => {
+      const smooth = smoothPositionsRef.current.get(id);
+      if (smooth) {
+        return { latitude: smooth.latitude, longitude: smooth.longitude };
+      }
+      return fallback;
+    },
+    []
+  );
+
+  useEffect(() => {
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+    };
+  }, []);
+
   // 게임 화면에서 내 위치가 갱신될 때마다 지도를 내 위치로 이동
   useEffect(() => {
     if (screen !== 'game') {
@@ -132,6 +244,12 @@ const App = (): React.JSX.Element => {
       easing: 'EaseOut',
     });
   }, [screen, myLocationCoord?.latitude, myLocationCoord?.longitude]);
+
+  // 내 위치 마커 부드럽게 이동
+  useEffect(() => {
+    if (!myLocationCoord) return;
+    setSmoothTarget('me', myLocationCoord, 300);
+  }, [myLocationCoord?.latitude, myLocationCoord?.longitude, setSmoothTarget]);
 
   // 게임 진입 시 위치 트래킹 시작(1회)
   useEffect(() => {
@@ -167,10 +285,14 @@ const App = (): React.JSX.Element => {
   useEffect(() => {
     if (screen !== 'game') return;
     // 오버레이는 HIDING 상태일 때만 표시
-    // 경찰: 기본 숨는시간 + 10초까지 딤드 오버레이 표시
+    // 경찰: 기본 숨는시간 + 10초까지 딤드 오버레이 표시 (CHASE 초반 10초 포함)
     // 도둑: 기본 숨는시간까지만 딤드 오버레이 표시
     const hidingCountdownSec = team === 'POLICE' ? policeRemainingSec : remainingSec;
-    if (status !== 'HIDING' || hidingCountdownSec <= 0) return;
+    const shouldShow =
+      team === 'POLICE'
+        ? (status === 'HIDING' || status === 'CHASE') && hidingCountdownSec > 0
+        : status === 'HIDING' && hidingCountdownSec > 0;
+    if (!shouldShow) return;
 
     if (lastShown.current === hidingCountdownSec) return;
     lastShown.current = hidingCountdownSec;
@@ -184,6 +306,7 @@ const App = (): React.JSX.Element => {
   // 게임 화면 데이터 계산 (항상 계산)
   const playersList = Array.from(players.values());
   const thieves = playersList.filter((p: any) => p.team === 'THIEF');
+  const polices = playersList.filter((p: any) => p.team === 'POLICE');
   const isPolice = team === 'POLICE';
 
   // 경찰 화면에서 도둑들의 위치 정보 추출
@@ -202,6 +325,87 @@ const App = (): React.JSX.Element => {
       }))
     : [];
 
+  // 경찰 화면에서 "위치 있는 다른 플레이어"를 모두 표시 (팀 누락 방어)
+  const policeMapCoords = isPolice
+    ? playersList
+      .filter((p: any) => {
+        const loc = p.location;
+        return (
+          p.playerId !== playerId &&
+          loc &&
+          typeof loc.lat === 'number' &&
+          typeof loc.lng === 'number' &&
+          // 팀 정보가 없으면 도둑으로 간주해 표시
+          (p.team !== 'POLICE' || p.team == null)
+        );
+      })
+      .map((p: any) => ({
+        playerId: p.playerId,
+        nickname: p.nickname,
+        latitude: p.location!.lat,
+        longitude: p.location!.lng,
+        state: p.thiefStatus?.state || 'FREE',
+      }))
+    : [];
+
+  // 도둑 화면에서 경찰들의 위치 정보 추출
+  const policeCoords = !isPolice
+    ? polices
+      .filter((p: any) => {
+        const loc = p.location;
+        return loc && typeof loc.lat === 'number' && typeof loc.lng === 'number';
+      })
+      .map((p: any) => ({
+        playerId: p.playerId,
+        nickname: p.nickname,
+        latitude: p.location!.lat,
+        longitude: p.location!.lng,
+      }))
+    : [];
+
+  // 도둑 화면에서 다른 도둑들의 위치 정보 추출 (내가 아닌 다른 도둑들)
+  const otherThiefCoords = !isPolice
+    ? thieves
+      .filter((t: any) => {
+        const loc = t.location;
+        return (
+          t.playerId !== playerId &&
+          loc &&
+          typeof loc.lat === 'number' &&
+          typeof loc.lng === 'number'
+        );
+      })
+      .map((t: any) => ({
+        playerId: t.playerId,
+        nickname: t.nickname,
+        latitude: t.location!.lat,
+        longitude: t.location!.lng,
+        state: t.thiefStatus?.state || 'FREE',
+      }))
+    : [];
+
+  // 다른 플레이어 마커 부드럽게 이동
+  useEffect(() => {
+    const nextIds = new Set<string>();
+    const upsert = (playerId: string, latitude: number, longitude: number) => {
+      const id = `player-${playerId}`;
+      nextIds.add(id);
+      setSmoothTarget(id, { latitude, longitude }, 350);
+    };
+
+    policeMapCoords.forEach((t) => upsert(t.playerId, t.latitude, t.longitude));
+    policeCoords.forEach((p) => upsert(p.playerId, p.latitude, p.longitude));
+    otherThiefCoords.forEach((t) => upsert(t.playerId, t.latitude, t.longitude));
+
+    // 사라진 플레이어 마커 정리
+    const map = smoothPositionsRef.current;
+    for (const key of Array.from(map.keys())) {
+      if (key.startsWith('player-') && !nextIds.has(key)) {
+        map.delete(key);
+      }
+    }
+  }, [policeMapCoords, policeCoords, otherThiefCoords, setSmoothTarget]);
+
   // 위치 업데이트 디버깅 (개발용) - 항상 호출, 조건부 로직은 내부에서 처리
   useEffect(() => {
     if (screen === 'game' && myLocationCoord) {
@@ -210,7 +414,13 @@ const App = (): React.JSX.Element => {
     if (screen === 'game' && isPolice && thiefCoords.length > 0) {
       console.log('[App] 👥 Thieves locations:', thiefCoords.length);
     }
-  }, [screen, myLocationCoord?.latitude, myLocationCoord?.longitude, isPolice, thiefCoords.length]);
+    if (screen === 'game' && !isPolice && policeCoords.length > 0) {
+      console.log('[App] 👮 Police locations:', policeCoords.length);
+    }
+    if (screen === 'game' && !isPolice && otherThiefCoords.length > 0) {
+      console.log('[App] 🦹 Other thieves locations:', otherThiefCoords.length);
+    }
+  }, [screen, myLocationCoord?.latitude, myLocationCoord?.longitude, isPolice, thiefCoords.length, policeCoords.length, otherThiefCoords.length]);
 
   // ─────────────────────────────────────────────────────────────
   // 🚀 SPLASH SCREEN
@@ -236,7 +446,10 @@ const App = (): React.JSX.Element => {
     // - 도둑: 기본 숨는시간만
     // - 경찰: 기본 숨는시간 + 10초
     const hidingCountdownSec = team === 'POLICE' ? policeRemainingSec : remainingSec;
-    const showHidingCountdown = status === 'HIDING' && hidingCountdownSec > 0;
+    const showHidingCountdown =
+      team === 'POLICE'
+        ? (status === 'HIDING' || status === 'CHASE') && hidingCountdownSec > 0
+        : status === 'HIDING' && hidingCountdownSec > 0;
 
     // 게임 총시간: 게임 시작 시점부터 계속 감소 (오른쪽 상단, 딤드 없음)
     // 게임 시작 = HIDING 시작 시점
@@ -249,6 +462,7 @@ const App = (): React.JSX.Element => {
     const totalRemainingSec = gameEndsAt ? Math.max(0, Math.ceil((gameEndsAt - now) / 1000)) : 0;
 
     const bg = isPolice ? styles.containerPolice : styles.containerThief;
+    const smoothMyCoord = myLocationCoord ? getSmoothCoord('me', myLocationCoord) : null;
 
     return (
       <SafeAreaView style={[styles.container, bg]}>
@@ -284,11 +498,11 @@ const App = (): React.JSX.Element => {
                     initialCamera={{ latitude: 37.5665, longitude: 126.978, zoom: 15 }}
                   >
                     {/* 내 위치 마커 (경찰) */}
-                    {myLocationCoord ? (
+                    {smoothMyCoord ? (
                       <NaverMapMarkerOverlay
-                        key={`marker-me-${myLocationCoord.latitude}-${myLocationCoord.longitude}`}
-                        latitude={myLocationCoord.latitude}
-                        longitude={myLocationCoord.longitude}
+                        key={`marker-me-${smoothMyCoord.latitude}-${smoothMyCoord.longitude}`}
+                        latitude={smoothMyCoord.latitude}
+                        longitude={smoothMyCoord.longitude}
                         width={25}
                         height={25}
                         anchor={{ x: 0.5, y: 1 }}
@@ -299,7 +513,7 @@ const App = (): React.JSX.Element => {
                       </NaverMapMarkerOverlay>
                     ) : null}
                     {/* 도둑들의 위치 마커 (경찰 화면에서만) */}
-                    {thiefCoords.map((thief) => {
+                    {policeMapCoords.map((thief) => {
                       const isCaptured = thief.state === 'CAPTURED';
                       const isJailed = thief.state === 'JAILED';
                       const isFree = thief.state === 'FREE';
@@ -308,12 +522,16 @@ const App = (): React.JSX.Element => {
                         : isJailed
                           ? '#FFAA00'
                           : '#F9F871';
+                      const smoothCoord = getSmoothCoord(`player-${thief.playerId}`, {
+                        latitude: thief.latitude,
+                        longitude: thief.longitude,
+                      });
 
                       return (
                         <NaverMapMarkerOverlay
-                          key={`marker-thief-${thief.playerId}-${thief.latitude}-${thief.longitude}`}
-                          latitude={thief.latitude}
-                          longitude={thief.longitude}
+                          key={`marker-thief-${thief.playerId}-${smoothCoord.latitude}-${smoothCoord.longitude}`}
+                          latitude={smoothCoord.latitude}
+                          longitude={smoothCoord.longitude}
                           width={25}
                           height={25}
                           anchor={{ x: 0.5, y: 1 }}
@@ -345,24 +563,31 @@ const App = (): React.JSX.Element => {
                 ) : (
                   <View style={styles.thievesListContainer}>
                     {thieves.map((t: any) => {
-                      const canCapture = status === 'CHASE' && t.thiefStatus?.state === 'FREE';
+                      const isFree = t.thiefStatus?.state === 'FREE';
                       const isCaptured = t.thiefStatus?.state === 'CAPTURED';
+                      const isJailed = t.thiefStatus?.state === 'JAILED';
+                      const canCapture = status === 'CHASE' && isFree;
+                      const canRelease = status === 'CHASE' && isCaptured;
+                      const canAction = canCapture || canRelease;
                       const label =
-                        t.thiefStatus?.state === 'CAPTURED'
+                        isCaptured
                           ? '검거됨'
-                          : t.thiefStatus?.state === 'JAILED'
+                          : isJailed
                             ? '감금됨'
                             : '자유';
                       return (
                         <TouchableOpacity
                           key={t.playerId}
-                          disabled={!canCapture}
-                          onPress={() => canCapture && gameLogic.attemptCapture(t.playerId)}
+                          disabled={!canAction}
+                          onPress={() => {
+                            if (canCapture) gameLogic.attemptCapture(t.playerId);
+                            if (canRelease) gameLogic.attemptRelease(t.playerId);
+                          }}
                           style={[
                             styles.listItem,
                             styles.listItemGrid,
-                            !canCapture && styles.listItemDisabled,
-                            canCapture && styles.listItemClickable,
+                            !canAction && styles.listItemDisabled,
+                            canAction && styles.listItemClickable,
                             isCaptured && styles.listItemCaptured,
                           ]}
                         >
@@ -400,11 +625,12 @@ const App = (): React.JSX.Element => {
                     isShowLocationButton={false}
                     initialCamera={{ latitude: 37.5665, longitude: 126.978, zoom: 15 }}
                   >
-                    {myLocationCoord ? (
+                    {/* 내 위치 마커 (도둑) */}
+                    {smoothMyCoord ? (
                       <NaverMapMarkerOverlay
-                        key={`marker-${myLocationCoord.latitude}-${myLocationCoord.longitude}`}
-                        latitude={myLocationCoord.latitude}
-                        longitude={myLocationCoord.longitude}
+                        key={`marker-me-${smoothMyCoord.latitude}-${smoothMyCoord.longitude}`}
+                        latitude={smoothMyCoord.latitude}
+                        longitude={smoothMyCoord.longitude}
                         width={25}
                         height={25}
                         anchor={{ x: 0.5, y: 1 }}
@@ -414,6 +640,60 @@ const App = (): React.JSX.Element => {
                         </View>
                       </NaverMapMarkerOverlay>
                     ) : null}
+                    {/* 경찰들의 위치 마커 (도둑 화면에서) */}
+                    {policeCoords.map((police) => {
+                      const smoothCoord = getSmoothCoord(`player-${police.playerId}`, {
+                        latitude: police.latitude,
+                        longitude: police.longitude,
+                      });
+                      return (
+                        <NaverMapMarkerOverlay
+                          key={`marker-police-${police.playerId}-${smoothCoord.latitude}-${smoothCoord.longitude}`}
+                          latitude={smoothCoord.latitude}
+                          longitude={smoothCoord.longitude}
+                          width={25}
+                          height={25}
+                          anchor={{ x: 0.5, y: 1 }}
+                        >
+                          <View collapsable={false} style={styles.policeMarkerIcon}>
+                            <Text style={styles.markerEmoji}>👮</Text>
+                          </View>
+                        </NaverMapMarkerOverlay>
+                      );
+                    })}
+                    {/* 다른 도둑들의 위치 마커 (도둑 화면에서) */}
+                    {otherThiefCoords.map((thief) => {
+                      const isCaptured = thief.state === 'CAPTURED';
+                      const isJailed = thief.state === 'JAILED';
+                      const borderColor = isCaptured
+                        ? '#666'
+                        : isJailed
+                          ? '#FFAA00'
+                          : '#F9F871';
+                      const smoothCoord = getSmoothCoord(`player-${thief.playerId}`, {
+                        latitude: thief.latitude,
+                        longitude: thief.longitude,
+                      });
+
+                      return (
+                        <NaverMapMarkerOverlay
+                          key={`marker-thief-${thief.playerId}-${smoothCoord.latitude}-${smoothCoord.longitude}`}
+                          latitude={smoothCoord.latitude}
+                          longitude={smoothCoord.longitude}
+                          width={25}
+                          height={25}
+                          anchor={{ x: 0.5, y: 1 }}
+                        >
+                          <View collapsable={false} style={[
+                            styles.thiefMarkerIcon,
+                            { borderColor },
+                            isCaptured && styles.thiefMarkerIconCaptured
+                          ]}>
+                            <Text style={[styles.markerEmoji, isCaptured && styles.markerEmojiCaptured]}>🦹</Text>
+                          </View>
+                        </NaverMapMarkerOverlay>
+                      );
+                    })}
                   </NaverMapView>
                 ) : (
                   <View style={styles.mapFallback}>
