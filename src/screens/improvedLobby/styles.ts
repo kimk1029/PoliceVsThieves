@@ -7,6 +7,12 @@ export const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#120458',
   },
+  safeArea: {
+    flex: 1,
+  },
+  backgroundImage: {
+    opacity: 0.95,
+  },
   mainWrapper: {
     flex: 1,
     padding: 20,
@@ -15,6 +21,10 @@ export const styles = StyleSheet.create({
   logoSection: {
     alignItems: 'center',
     marginBottom: 30,
+  },
+  titleImage: {
+    width: width * 0.96,
+    height: width * 0.48,
   },
   pixelLogo: {
     fontSize: 40,

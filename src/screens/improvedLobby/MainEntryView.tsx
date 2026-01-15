@@ -1,5 +1,7 @@
 import React from 'react';
 import {
+  Image,
+  ImageBackground,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -57,17 +59,24 @@ export const MainEntryView: React.FC<MainEntryViewProps> = ({
   showReconnectingModal,
 }) => {
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#120458" />
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.mainWrapper}
-      >
-        <View style={styles.logoSection}>
-          <Text style={styles.pixelLogo}>POLICE</Text>
-          <Text style={styles.pixelLogoVS}>VS</Text>
-          <Text style={styles.pixelLogo}>THIEVES</Text>
-        </View>
+    <ImageBackground
+      source={require('../../assets/images/bgtitle.jpg')}
+      style={styles.container}
+      imageStyle={styles.backgroundImage}
+    >
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="light-content" backgroundColor="#120458" />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.mainWrapper}
+        >
+          <View style={styles.logoSection}>
+            <Image
+              source={require('../../assets/images/title.png')}
+              style={styles.titleImage}
+              resizeMode="contain"
+            />
+          </View>
 
         <TouchableOpacity
           style={[
@@ -160,8 +169,9 @@ export const MainEntryView: React.FC<MainEntryViewProps> = ({
             </View>
           </View>
         </Modal>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </ImageBackground>
   );
 };
 
