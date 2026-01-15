@@ -24,6 +24,7 @@ export interface Player {
   ready: boolean;
   connected: boolean;
   thiefStatus: ThiefStatus | null;
+  location?: Location | null;
 }
 
 export interface RoomSettings {

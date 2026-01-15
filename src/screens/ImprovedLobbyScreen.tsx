@@ -36,7 +36,7 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
   const lastScannedRef = useRef<{ code: string; at: number } | null>(null);
   const scanProcessingRef = useRef(false);
 
-  const { playerId, setNickname } = usePlayerStore();
+  const { playerId, setNickname, loadNickname } = usePlayerStore();
   const { roomId, players, status, chatMessages, settings } = useGameStore();
   const {
     isConnected,
@@ -52,9 +52,17 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
 
   const [showReconnectingModal, setShowReconnectingModal] = useState(false);
 
+  // 초기화: playerId 로드, 닉네임 불러오기, 서버 상태 체크
   useEffect(() => {
     const initPlayer = async () => {
       await usePlayerStore.getState().loadPlayerId();
+      // 저장된 닉네임 불러오기
+      const savedNickname = await loadNickname();
+      if (savedNickname) {
+        setPlayerName(savedNickname);
+      }
+      // 메인 화면 렌더 시 서버 상태 체크
+      await checkConnection();
     };
     initPlayer();
   }, []);
@@ -89,13 +97,13 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
       Alert.alert('👾 SYSTEM', 'CONNECTION FAILED');
       return;
     }
-    setNickname(playerName);
+    await setNickname(playerName);
     await createRoom(playerName, {
       maxPlayers: 20,
       hidingSeconds: 60,
       chaseSeconds: 600,
       proximityRadiusMeters: 30,
-      captureRadiusMeters: 10,
+      captureRadiusMeters: 50,
       jailRadiusMeters: 15,
     });
   };
@@ -118,7 +126,7 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
     }
 
     setRoomCode(normalizedRoomCode);
-    setNickname(trimmedPlayerName);
+    await setNickname(trimmedPlayerName);
 
     const actuallyConnected = await checkConnection();
     if (!actuallyConnected) {
@@ -143,7 +151,7 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
       Alert.alert('👾 SYSTEM', 'CONNECTION FAILED');
       return;
     }
-    setNickname(playerName);
+    await setNickname(playerName);
     setRoomCode(normalized);
     await joinRoom(normalized, playerName);
   };
@@ -179,6 +187,31 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
     setTimeout(() => setQrScannerSession(s => s + 1), 0);
     joinWithCode(rid);
   };
+
+  // 닉네임 변경 시 저장 (debounce 적용)
+  const nicknameSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handlePlayerNameChange = (text: string) => {
+    setPlayerName(text);
+    // 이전 타이머 취소
+    if (nicknameSaveTimeoutRef.current) {
+      clearTimeout(nicknameSaveTimeoutRef.current);
+    }
+    // 1초 후 저장 (사용자가 입력을 멈춘 후)
+    nicknameSaveTimeoutRef.current = setTimeout(async () => {
+      if (text.trim()) {
+        await setNickname(text.trim());
+      }
+    }, 1000);
+  };
+
+  // 컴포넌트 언마운트 시 타이머 정리
+  useEffect(() => {
+    return () => {
+      if (nicknameSaveTimeoutRef.current) {
+        clearTimeout(nicknameSaveTimeoutRef.current);
+      }
+    };
+  }, []);
   if (roomId && (status === 'LOBBY' || !status)) {
     return (
       <LobbyView
@@ -209,7 +242,7 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
         await checkConnection();
       }}
       playerName={playerName}
-      onChangePlayerName={setPlayerName}
+      onChangePlayerName={handlePlayerNameChange}
       roomCode={roomCode}
       onChangeRoomCode={setRoomCode}
       onCreateRoom={handleCreateRoom}

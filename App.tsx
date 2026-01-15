@@ -75,7 +75,7 @@ const App = (): React.JSX.Element => {
     setScreenParams(params || {});
   };
 
-  const {team, location} = usePlayerStore();
+  const {team, location, playerId} = usePlayerStore();
   const {status, phaseEndsAt, players, settings} = useGameStore();
 
   // 게임 진입 시 위치 트래킹 시작(1회)
@@ -95,11 +95,11 @@ const App = (): React.JSX.Element => {
     return () => clearInterval(id);
   }, [screen]);
 
-  // 기본 카운트다운(서버 기준)
+  // 기본 카운트다운(서버 기준) - HIDING 종료까지 남은 시간
   const remainingSec = phaseEndsAt ? Math.max(0, Math.ceil((phaseEndsAt - now) / 1000)) : 0;
 
-  // 요구사항: 경찰은 도둑보다 +20초 더 카운트(=추가로 20초 더 화면을 가리고 대기)
-  const policeExtraMs = 20_000;
+  // 요구사항: 경찰은 도둑보다 +10초 더 카운트(=추가로 10초 더 화면을 가리고 대기)
+  const policeExtraMs = 10_000;
   const policeCountdownEndsAt =
     phaseEndsAt && team === 'POLICE' ? phaseEndsAt + policeExtraMs : phaseEndsAt;
   const policeRemainingSec = policeCountdownEndsAt
@@ -111,21 +111,57 @@ const App = (): React.JSX.Element => {
   const lastShown = useRef<number | null>(null);
   useEffect(() => {
     if (screen !== 'game') return;
-    // 경찰은 HIDING 종료 후에도 +20초 더 카운트(CHASE 초입까지 오버레이 유지)
-    const showCountdownForTeam =
-      status === 'HIDING' ||
-      (team === 'POLICE' && status === 'CHASE' && policeRemainingSec > 0);
-    if (!showCountdownForTeam) return;
+    // 오버레이는 HIDING 상태일 때만 표시
+    // 경찰: 기본 숨는시간 + 10초까지 딤드 오버레이 표시
+    // 도둑: 기본 숨는시간까지만 딤드 오버레이 표시
+    const hidingCountdownSec = team === 'POLICE' ? policeRemainingSec : remainingSec;
+    if (status !== 'HIDING' || hidingCountdownSec <= 0) return;
 
-    const shown = team === 'POLICE' ? policeRemainingSec : remainingSec;
-    if (lastShown.current === shown) return;
-    lastShown.current = shown;
+    if (lastShown.current === hidingCountdownSec) return;
+    lastShown.current = hidingCountdownSec;
 
     Animated.sequence([
       Animated.timing(pulse, {toValue: 1.15, duration: 120, useNativeDriver: true}),
       Animated.timing(pulse, {toValue: 1, duration: 120, useNativeDriver: true}),
     ]).start();
   }, [screen, status, team, remainingSec, policeRemainingSec, pulse]);
+
+  // 위치 좌표 계산 (항상 계산, 조건부 렌더링은 return에서 처리)
+  const myCoord =
+    location && typeof location.lat === 'number' && typeof location.lng === 'number'
+      ? {latitude: location.lat, longitude: location.lng}
+      : null;
+
+  // 게임 화면 데이터 계산 (항상 계산)
+  const playersList = Array.from(players.values());
+  const thieves = playersList.filter((p: any) => p.team === 'THIEF');
+  const isPolice = team === 'POLICE';
+  
+  // 경찰 화면에서 도둑들의 위치 정보 추출
+  const thiefCoords = isPolice
+    ? thieves
+        .filter((t: any) => {
+          const loc = t.location;
+          return loc && typeof loc.lat === 'number' && typeof loc.lng === 'number';
+        })
+        .map((t: any) => ({
+          playerId: t.playerId,
+          nickname: t.nickname,
+          latitude: t.location!.lat,
+          longitude: t.location!.lng,
+          state: t.thiefStatus?.state || 'FREE',
+        }))
+    : [];
+
+  // 위치 업데이트 디버깅 (개발용) - 항상 호출, 조건부 로직은 내부에서 처리
+  useEffect(() => {
+    if (screen === 'game' && myCoord) {
+      console.log('[App] 📍 My location updated:', myCoord);
+    }
+    if (screen === 'game' && isPolice && thiefCoords.length > 0) {
+      console.log('[App] 👥 Thieves locations:', thiefCoords.length);
+    }
+  }, [screen, myCoord?.latitude, myCoord?.longitude, isPolice, thiefCoords.length]);
 
   // ─────────────────────────────────────────────────────────────
   // 🚀 SPLASH SCREEN
@@ -146,35 +182,24 @@ const App = (): React.JSX.Element => {
   // ─────────────────────────────────────────────────────────────
   if (screen === 'game') {
     const roleLabel = team === 'POLICE' ? '🚔 경찰' : team === 'THIEF' ? '🏃 도둑' : '…';
-    const showHidingCountdown =
-      (status === 'HIDING' && remainingSec > 0) ||
-      (team === 'POLICE' && status === 'CHASE' && policeRemainingSec > 0);
-    const countdownValue = team === 'POLICE' ? policeRemainingSec : remainingSec;
+    
+    // 숨는시간: HIDING 상태에서 딤드 오버레이 + 중앙 카운트다운 표시
+    // - 도둑: 기본 숨는시간만
+    // - 경찰: 기본 숨는시간 + 10초
+    const hidingCountdownSec = team === 'POLICE' ? policeRemainingSec : remainingSec;
+    const showHidingCountdown = status === 'HIDING' && hidingCountdownSec > 0;
 
-    // 요구사항:
-    // - 숨는시간은 메인(오버레이)에서만 보여준다.
-    // - 게임 총시간은 오른쪽 상단(HUD)에서만 "계속 감소"해야 한다.
-    //   (HIDING -> CHASE로 넘어갈 때 "또 새로 카운트다운"처럼 보이지 않도록,
-    //    HIDING 중에도 totalRemainingSec는 계속 줄어들게 계산)
+    // 게임 총시간: 게임 시작 시점부터 계속 감소 (오른쪽 상단, 딤드 없음)
+    // 게임 시작 = HIDING 시작 시점
+    // 게임 종료 = HIDING 종료 + CHASE 시간
+    const hidingMs = (settings?.hidingSeconds ?? 0) * 1000;
     const chaseMs = (settings?.chaseSeconds ?? 0) * 1000;
-    const totalEndsAt =
-      phaseEndsAt && status === 'HIDING'
-        ? phaseEndsAt + chaseMs
-        : phaseEndsAt && status === 'CHASE'
-          ? phaseEndsAt
-          : null;
-    const totalRemainingSec = totalEndsAt ? Math.max(0, Math.ceil((totalEndsAt - now) / 1000)) : 0;
+    const gameStartAt = phaseEndsAt && status === 'HIDING' ? phaseEndsAt - hidingMs : null;
+    const gameEndsAt = gameStartAt ? gameStartAt + hidingMs + chaseMs : 
+                       (phaseEndsAt && status === 'CHASE' ? phaseEndsAt : null);
+    const totalRemainingSec = gameEndsAt ? Math.max(0, Math.ceil((gameEndsAt - now) / 1000)) : 0;
 
-    const playersList = Array.from(players.values());
-    const thieves = playersList.filter((p: any) => p.team === 'THIEF');
-
-    const isPolice = team === 'POLICE';
     const bg = isPolice ? styles.containerPolice : styles.containerThief;
-
-    const myCoord =
-      location && typeof location.lat === 'number' && typeof location.lng === 'number'
-        ? {latitude: location.lat, longitude: location.lng}
-        : null;
 
     return (
       <View style={[styles.container, bg]}>
@@ -190,8 +215,10 @@ const App = (): React.JSX.Element => {
           </View>
         </View>
 
-        {/* POLICE / THIEF 화면 분리 */}
-        {isPolice ? (
+        {/* 스크롤 가능한 컨텐츠 영역 (bottomPanel 공간 확보) */}
+        <View style={styles.contentArea}>
+          {/* POLICE / THIEF 화면 분리 */}
+          {isPolice ? (
           <>
             {/* MAP AREA */}
             <View style={styles.mapContainer}>
@@ -208,13 +235,51 @@ const App = (): React.JSX.Element => {
                   camera={myCoord ? {latitude: myCoord.latitude, longitude: myCoord.longitude, zoom: 16} : undefined}
                   animationDuration={200}
                 >
+                  {/* 내 위치 마커 (경찰) */}
                   {myCoord ? (
                     <NaverMapMarkerOverlay
+                      key={`marker-me-${myCoord.latitude}-${myCoord.longitude}`}
                       latitude={myCoord.latitude}
                       longitude={myCoord.longitude}
-                      caption={{text: '나'}}
-                    />
+                      width={25}
+                      height={25}
+                      anchor={{x: 0.5, y: 1}}
+                    >
+                      <View collapsable={false} style={styles.policeMarkerIcon}>
+                        <Text style={styles.markerEmoji}>👮</Text>
+                      </View>
+                    </NaverMapMarkerOverlay>
                   ) : null}
+                  {/* 도둑들의 위치 마커 (경찰 화면에서만) */}
+                  {thiefCoords.map((thief) => {
+                    const isCaptured = thief.state === 'CAPTURED';
+                    const isJailed = thief.state === 'JAILED';
+                    const isFree = thief.state === 'FREE';
+                    const borderColor = isCaptured 
+                      ? '#666' 
+                      : isJailed 
+                        ? '#FFAA00' 
+                        : '#F9F871';
+                    
+                    return (
+                      <NaverMapMarkerOverlay
+                        key={`marker-thief-${thief.playerId}-${thief.latitude}-${thief.longitude}`}
+                        latitude={thief.latitude}
+                        longitude={thief.longitude}
+                        width={25}
+                        height={25}
+                        anchor={{x: 0.5, y: 1}}
+                      >
+                        <View collapsable={false} style={[
+                          styles.thiefMarkerIcon, 
+                          {borderColor},
+                          isCaptured && styles.thiefMarkerIconCaptured
+                        ]}>
+                          <Text style={[styles.markerEmoji, isCaptured && styles.markerEmojiCaptured]}>🦹</Text>
+                        </View>
+                      </NaverMapMarkerOverlay>
+                    );
+                  })}
                 </NaverMapView>
               ) : (
                 <View style={styles.mapFallback}>
@@ -230,32 +295,50 @@ const App = (): React.JSX.Element => {
               {thieves.length === 0 ? (
                 <Text style={styles.listEmpty}>도둑 없음</Text>
               ) : (
-                thieves.map((t: any) => {
-                  const disabled = status !== 'CHASE' || t.thiefStatus?.state !== 'FREE';
-                  const label =
-                    t.thiefStatus?.state === 'CAPTURED'
-                      ? 'CAPTURED'
-                      : t.thiefStatus?.state === 'JAILED'
-                        ? 'JAILED'
-                        : 'FREE';
-                  return (
-                    <TouchableOpacity
-                      key={t.playerId}
-                      disabled={disabled}
-                      onPress={() => gameLogic.attemptCapture(t.playerId)}
-                      style={[
-                        styles.listItem,
-                        disabled && styles.listItemDisabled,
-                      ]}
-                    >
-                      <Text style={styles.listItemText}>{t.nickname}</Text>
-                      <Text style={styles.listItemBadge}>{label}</Text>
-                    </TouchableOpacity>
-                  );
-                })
+                <View style={styles.thievesListContainer}>
+                  {thieves.map((t: any) => {
+                    const canCapture = status === 'CHASE' && t.thiefStatus?.state === 'FREE';
+                    const isCaptured = t.thiefStatus?.state === 'CAPTURED';
+                    const label =
+                      t.thiefStatus?.state === 'CAPTURED'
+                        ? '검거됨'
+                        : t.thiefStatus?.state === 'JAILED'
+                          ? '감금됨'
+                          : '자유';
+                    return (
+                      <TouchableOpacity
+                        key={t.playerId}
+                        disabled={!canCapture}
+                        onPress={() => canCapture && gameLogic.attemptCapture(t.playerId)}
+                        style={[
+                          styles.listItem,
+                          styles.listItemGrid,
+                          !canCapture && styles.listItemDisabled,
+                          canCapture && styles.listItemClickable,
+                          isCaptured && styles.listItemCaptured,
+                        ]}
+                      >
+                        <Text style={[
+                          styles.listItemText,
+                          isCaptured && styles.listItemTextCaptured
+                        ]}>
+                          {t.nickname}
+                        </Text>
+                        <Text style={[
+                          styles.listItemBadge,
+                          t.thiefStatus?.state === 'CAPTURED' && styles.listItemBadgeCaptured,
+                          t.thiefStatus?.state === 'JAILED' && styles.listItemBadgeJailed,
+                          t.thiefStatus?.state === 'FREE' && styles.listItemBadgeFree,
+                        ]}>
+                          {label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
               )}
               <Text style={styles.listHint}>
-                {status !== 'CHASE' ? '추격전 시작 후 검거 가능합니다' : '도둑을 눌러 검거 시도'}
+                {status !== 'CHASE' ? '추격전 시작 후 검거 가능합니다' : '자유 상태의 도둑을 눌러 검거 시도'}
               </Text>
             </View>
           </>
@@ -272,10 +355,17 @@ const App = (): React.JSX.Element => {
                 >
                   {myCoord ? (
                     <NaverMapMarkerOverlay
+                      key={`marker-${myCoord.latitude}-${myCoord.longitude}`}
                       latitude={myCoord.latitude}
                       longitude={myCoord.longitude}
-                      caption={{text: '나'}}
-                    />
+                      width={25}
+                      height={25}
+                      anchor={{x: 0.5, y: 1}}
+                    >
+                      <View collapsable={false} style={styles.thiefMarkerIcon}>
+                        <Text style={styles.markerEmoji}>🦹</Text>
+                      </View>
+                    </NaverMapMarkerOverlay>
                   ) : null}
                 </NaverMapView>
               ) : (
@@ -285,14 +375,61 @@ const App = (): React.JSX.Element => {
                 </View>
               )}
             </View>
+            {/* THIEVES LIST (도둑 화면: 검거 현황만 표시, 클릭 불가) */}
             <View style={styles.listPanel}>
-              <Text style={styles.listTitle}>STATUS</Text>
-              <Text style={styles.listEmpty}>경찰을 피해 생존하세요</Text>
+              <Text style={styles.listTitle}>THIEVES</Text>
+              {thieves.length === 0 ? (
+                <Text style={styles.listEmpty}>도둑 없음</Text>
+              ) : (
+                <View style={styles.thievesListContainer}>
+                  {thieves.map((t: any) => {
+                    const isCaptured = t.thiefStatus?.state === 'CAPTURED';
+                    const label =
+                      t.thiefStatus?.state === 'CAPTURED'
+                        ? '검거됨'
+                        : t.thiefStatus?.state === 'JAILED'
+                          ? '감금됨'
+                          : '자유';
+                    const isMe = t.playerId === playerId;
+                    return (
+                      <View
+                        key={t.playerId}
+                        style={[
+                          styles.listItem,
+                          styles.listItemGrid,
+                          styles.listItemReadOnly,
+                          isMe && styles.listItemMe,
+                          isCaptured && styles.listItemCaptured,
+                        ]}
+                      >
+                        <Text style={[
+                          styles.listItemText,
+                          isCaptured && styles.listItemTextCaptured
+                        ]}>
+                          {isMe ? `나 (${t.nickname})` : t.nickname}
+                        </Text>
+                        <Text style={[
+                          styles.listItemBadge,
+                          t.thiefStatus?.state === 'CAPTURED' && styles.listItemBadgeCaptured,
+                          t.thiefStatus?.state === 'JAILED' && styles.listItemBadgeJailed,
+                          t.thiefStatus?.state === 'FREE' && styles.listItemBadgeFree,
+                        ]}>
+                          {label}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+              <Text style={styles.listHint}>
+                경찰을 피해 생존하세요
+              </Text>
             </View>
           </>
-        )}
+          )}
+        </View>
 
-        {/* BOTTOM PANEL */}
+        {/* BOTTOM PANEL - 항상 화면 하단에 고정 */}
         <View style={styles.bottomPanel}>
           <Text style={styles.statusTitle}>MISSION: CAPTURE</Text>
           <Text style={styles.statusDesc}>Find and capture all thieves.</Text>
@@ -304,7 +441,7 @@ const App = (): React.JSX.Element => {
         {showHidingCountdown && (
           <View style={styles.countdownOverlay}>
             <Animated.View style={[styles.countdownBox, {transform: [{scale: pulse}]}]}>
-              <Text style={styles.countdownText}>{countdownValue}</Text>
+              <Text style={styles.countdownText}>{hidingCountdownSec}</Text>
             </Animated.View>
           </View>
         )}
@@ -420,6 +557,11 @@ const styles = StyleSheet.create({
     borderColor: '#000',
     padding: 12,
   },
+  thievesListContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
   listTitle: {
     color: '#F9F871',
     fontSize: 16,
@@ -443,8 +585,39 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     backgroundColor: '#111',
   },
+  listItemGrid: {
+    width: '48%',
+  },
   listItemDisabled: {
     opacity: 0.5,
+  },
+  listItemClickable: {
+    borderColor: '#FF0055',
+  },
+  listItemReadOnly: {
+    // 클릭 불가능한 아이템 (도둑 화면)
+  },
+  listItemMe: {
+    borderColor: '#F9F871',
+    backgroundColor: '#222',
+  },
+  listItemBadgeFree: {
+    color: '#00E5FF',
+  },
+  listItemCaptured: {
+    backgroundColor: '#333',
+    borderColor: '#666',
+    opacity: 0.7,
+  },
+  listItemTextCaptured: {
+    color: '#999',
+    textDecorationLine: 'line-through',
+  },
+  listItemBadgeCaptured: {
+    color: '#999',
+  },
+  listItemBadgeJailed: {
+    color: '#FFAA00',
   },
   listItemText: {
     color: '#fff',
@@ -498,7 +671,15 @@ const styles = StyleSheet.create({
     textShadowRadius: 0,
     letterSpacing: 2,
   },
+  contentArea: {
+    flex: 1,
+    paddingBottom: 120, // bottomPanel 공간 확보
+  },
   bottomPanel: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     padding: 16,
     backgroundColor: '#000',
     borderTopWidth: 4,
@@ -592,6 +773,49 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  
+  // -- Map Marker Icons --
+  policeMarkerIcon: {
+    width: 25,
+    height: 25,
+    borderRadius: 12.5,
+    backgroundColor: '#00AAFF',
+    borderWidth: 2,
+    borderColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  thiefMarkerIcon: {
+    width: 25,
+    height: 25,
+    borderRadius: 12.5,
+    backgroundColor: '#F9F871',
+    borderWidth: 2,
+    borderColor: '#F9F871',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  thiefMarkerIconCaptured: {
+    backgroundColor: '#666',
+    borderColor: '#666',
+    opacity: 0.7,
+  },
+  markerEmoji: {
+    fontSize: 14,
+  },
+  markerEmojiCaptured: {
+    opacity: 0.5,
   },
 });
 

@@ -1,7 +1,7 @@
 import { useGameStore } from '../../store/useGameStore';
 import { usePlayerStore } from '../../store/usePlayerStore';
 import { useUIStore } from '../../store/useUIStore';
-import { Vibration } from 'react-native';
+import { Alert, Vibration } from 'react-native';
 
 export const handleServerMessage = (message: any) => {
   const { type, data } = message;
@@ -29,6 +29,10 @@ export const handleServerMessage = (message: any) => {
 
     case 'jail:result':
       handleJailResult(message);
+      break;
+    
+    case 'location:update':
+      handleLocationUpdate(data);
       break;
 
     case 'game:end':
@@ -92,6 +96,29 @@ const handleCaptureResult = (message: any) => {
 
   if (success) {
     console.log('Thief captured:', data.thiefNickname);
+    if (data?.thiefId) {
+      const gameStore = useGameStore.getState();
+      gameStore.updatePlayer(data.thiefId, {
+        thiefStatus: {
+          state: 'CAPTURED',
+          capturedBy: data.policeId ?? null,
+          capturedAt: data.capturedAt ?? Date.now(),
+          jailedAt: null,
+        },
+      });
+      const playerStore = usePlayerStore.getState();
+      if (playerStore.playerId === data.thiefId) {
+        playerStore.setThiefStatus({
+          state: 'CAPTURED',
+          capturedBy: data.policeId ?? null,
+          capturedAt: data.capturedAt ?? Date.now(),
+          jailedAt: null,
+        });
+      }
+    }
+  } else if (message?.error) {
+    console.warn('Capture failed:', message.error);
+    Alert.alert('검거 실패', message.error);
   }
 };
 
@@ -100,7 +127,37 @@ const handleJailResult = (message: any) => {
 
   if (success) {
     console.log('Thief jailed:', data.thiefNickname);
+    if (data?.thiefId) {
+      const gameStore = useGameStore.getState();
+      gameStore.updatePlayer(data.thiefId, {
+        thiefStatus: {
+          state: 'JAILED',
+          capturedBy: null,
+          capturedAt: null,
+          jailedAt: data.jailedAt ?? Date.now(),
+        },
+      });
+      const playerStore = usePlayerStore.getState();
+      if (playerStore.playerId === data.thiefId) {
+        playerStore.setThiefStatus({
+          state: 'JAILED',
+          capturedBy: null,
+          capturedAt: null,
+          jailedAt: data.jailedAt ?? Date.now(),
+        });
+      }
+    }
+  } else if (message?.error) {
+    console.warn('Jail failed:', message.error);
   }
+};
+
+const handleLocationUpdate = (data: any) => {
+  if (!data?.playerId || !data?.location) return;
+  const gameStore = useGameStore.getState();
+  gameStore.updatePlayer(data.playerId, {
+    location: data.location,
+  });
 };
 
 const handleGameEnd = (data: any) => {

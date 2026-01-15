@@ -78,7 +78,9 @@ export class LocationService {
       },
       {
         enableHighAccuracy: true,
-        distanceFilter: 5,
+        // distanceFilter를 0으로 설정하여 모든 위치 변경을 실시간으로 받음
+        // (1미터 이상 이동 시 업데이트, 부드러운 지도 추적)
+        distanceFilter: 0,
         interval: intervalMs,
         fastestInterval: intervalMs / 2
       }

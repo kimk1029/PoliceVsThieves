@@ -13,7 +13,8 @@ interface PlayerStore {
 
   setPlayerId: (id: string) => Promise<void>;
   loadPlayerId: () => Promise<void>;
-  setNickname: (name: string) => void;
+  setNickname: (name: string) => Promise<void>;
+  loadNickname: () => Promise<string | null>;
   setRole: (role: PlayerRole) => void;
   setTeam: (team: Team) => void;
   setReady: (ready: boolean) => void;
@@ -23,6 +24,7 @@ interface PlayerStore {
 }
 
 const PLAYER_ID_KEY = '@police_vs_thieves_player_id';
+const NICKNAME_KEY = '@police_vs_thieves_nickname';
 
 export const usePlayerStore = create<PlayerStore>((set) => ({
   playerId: null,
@@ -49,12 +51,28 @@ export const usePlayerStore = create<PlayerStore>((set) => ({
     }
   },
 
-  setNickname: (name) => set({ nickname: name }),
+  setNickname: async (name) => {
+    if (name && name.trim()) {
+      await AsyncStorage.setItem(NICKNAME_KEY, name.trim());
+      set({ nickname: name.trim() });
+    } else {
+      set({ nickname: name });
+    }
+  },
   setRole: (role) => set({ role }),
   setTeam: (team) => set({ team }),
   setReady: (ready) => set({ ready }),
   updateLocation: (loc) => set({ location: loc }),
   setThiefStatus: (status) => set({ thiefStatus: status }),
+
+  loadNickname: async () => {
+    const saved = await AsyncStorage.getItem(NICKNAME_KEY);
+    if (saved) {
+      set({ nickname: saved });
+      return saved;
+    }
+    return null;
+  },
 
   reset: () =>
     set({
