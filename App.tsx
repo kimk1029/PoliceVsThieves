@@ -19,6 +19,7 @@ import { usePlayerStore } from './src/store/usePlayerStore';
 import { useGameLogic } from './src/hooks/useGameLogic';
 import { PixelButton } from './src/components/pixel/PixelButton';
 import { NaverMapMarkerOverlay, NaverMapView } from '@mj-studio/react-native-naver-map';
+import Geolocation from 'react-native-geolocation-service';
 
 const App = (): React.JSX.Element => {
   const [screen, setScreen] = useState('splash'); // Start with splash
@@ -59,8 +60,8 @@ const App = (): React.JSX.Element => {
             '위치 권한 필요',
             'iOS 설정에서 이 앱의 위치 권한을 “앱 사용 중”으로 허용해주세요.',
             [
-              {text: '닫기', style: 'cancel'},
-              {text: '설정 열기', onPress: () => Linking.openSettings()},
+              { text: '닫기', style: 'cancel' },
+              { text: '설정 열기', onPress: () => Linking.openSettings() },
             ],
           );
         }
@@ -99,13 +100,13 @@ const App = (): React.JSX.Element => {
   const { status, phaseEndsAt, players, settings } = useGameStore();
 
   // 내 위치(스토어)를 지도 좌표로 변환
-  const myCoord =
+  const myLocationCoord =
     location && typeof location.lat === 'number' && typeof location.lng === 'number'
-      ? {latitude: location.lat, longitude: location.lng}
+      ? { latitude: location.lat, longitude: location.lng }
       : null;
 
   // 지도 카메라를 내 위치로 따라오게 하기 위한 ref
-  const mapRef = useRef<NaverMapViewRef>(null);
+  const mapRef = useRef<any>(null);
   const hasCenteredOnceRef = useRef(false);
 
   // 게임 화면에서 내 위치가 갱신될 때마다 지도를 내 위치로 이동
@@ -114,19 +115,19 @@ const App = (): React.JSX.Element => {
       hasCenteredOnceRef.current = false;
       return;
     }
-    if (!myCoord) return;
+    if (!myLocationCoord) return;
     if (!mapRef.current) return;
 
     const duration = hasCenteredOnceRef.current ? 250 : 350;
     hasCenteredOnceRef.current = true;
     mapRef.current.animateCameraTo({
-      latitude: myCoord.latitude,
-      longitude: myCoord.longitude,
+      latitude: myLocationCoord.latitude,
+      longitude: myLocationCoord.longitude,
       zoom: 16,
       duration,
       easing: 'EaseOut',
     });
-  }, [screen, myCoord?.latitude, myCoord?.longitude]);
+  }, [screen, myLocationCoord?.latitude, myLocationCoord?.longitude]);
 
   // 게임 진입 시 위치 트래킹 시작(1회)
   useEffect(() => {
@@ -176,12 +177,6 @@ const App = (): React.JSX.Element => {
     ]).start();
   }, [screen, status, remainingSec, pulse]);
 
-  // 위치 좌표 계산 (항상 계산, 조건부 렌더링은 return에서 처리)
-  const myCoord =
-    location && typeof location.lat === 'number' && typeof location.lng === 'number'
-      ? { latitude: location.lat, longitude: location.lng }
-      : null;
-
   // 게임 화면 데이터 계산 (항상 계산)
   const playersList = Array.from(players.values());
   const thieves = playersList.filter((p: any) => p.team === 'THIEF');
@@ -205,13 +200,13 @@ const App = (): React.JSX.Element => {
 
   // 위치 업데이트 디버깅 (개발용) - 항상 호출, 조건부 로직은 내부에서 처리
   useEffect(() => {
-    if (screen === 'game' && myCoord) {
-      console.log('[App] 📍 My location updated:', myCoord);
+    if (screen === 'game' && myLocationCoord) {
+      console.log('[App] 📍 My location updated:', myLocationCoord);
     }
     if (screen === 'game' && isPolice && thiefCoords.length > 0) {
       console.log('[App] 👥 Thieves locations:', thiefCoords.length);
     }
-  }, [screen, myCoord?.latitude, myCoord?.longitude, isPolice, thiefCoords.length]);
+  }, [screen, myLocationCoord?.latitude, myLocationCoord?.longitude, isPolice, thiefCoords.length]);
 
   // ─────────────────────────────────────────────────────────────
   // 🚀 SPLASH SCREEN
@@ -282,15 +277,15 @@ const App = (): React.JSX.Element => {
                     // 일부 기기/환경에서 멈춤(파란 화면/먹통) 이슈가 있을 수 있어
                     // 앱의 LocationService(react-native-geolocation-service) 기반으로 직접 카메라/마커를 제어합니다.
                     initialCamera={{ latitude: 37.5665, longitude: 126.978, zoom: 15 }}
-                    camera={myCoord ? { latitude: myCoord.latitude, longitude: myCoord.longitude, zoom: 16 } : undefined}
+                    camera={myLocationCoord ? { latitude: myLocationCoord.latitude, longitude: myLocationCoord.longitude, zoom: 16 } : undefined}
                     animationDuration={200}
                   >
                     {/* 내 위치 마커 (경찰) */}
-                    {myCoord ? (
+                    {myLocationCoord ? (
                       <NaverMapMarkerOverlay
-                        key={`marker-me-${myCoord.latitude}-${myCoord.longitude}`}
-                        latitude={myCoord.latitude}
-                        longitude={myCoord.longitude}
+                        key={`marker-me-${myLocationCoord.latitude}-${myLocationCoord.longitude}`}
+                        latitude={myLocationCoord.latitude}
+                        longitude={myLocationCoord.longitude}
                         width={25}
                         height={25}
                         anchor={{ x: 0.5, y: 1 }}
@@ -400,14 +395,14 @@ const App = (): React.JSX.Element => {
                     style={styles.map}
                     isShowLocationButton={false}
                     initialCamera={{ latitude: 37.5665, longitude: 126.978, zoom: 15 }}
-                    camera={myCoord ? { latitude: myCoord.latitude, longitude: myCoord.longitude, zoom: 16 } : undefined}
+                    camera={myLocationCoord ? { latitude: myLocationCoord.latitude, longitude: myLocationCoord.longitude, zoom: 16 } : undefined}
                     animationDuration={200}
                   >
-                    {myCoord ? (
+                    {myLocationCoord ? (
                       <NaverMapMarkerOverlay
-                        key={`marker-${myCoord.latitude}-${myCoord.longitude}`}
-                        latitude={myCoord.latitude}
-                        longitude={myCoord.longitude}
+                        key={`marker-${myLocationCoord.latitude}-${myLocationCoord.longitude}`}
+                        latitude={myLocationCoord.latitude}
+                        longitude={myLocationCoord.longitude}
                         width={25}
                         height={25}
                         anchor={{ x: 0.5, y: 1 }}
