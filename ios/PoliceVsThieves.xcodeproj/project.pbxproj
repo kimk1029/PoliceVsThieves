@@ -485,7 +485,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				NAVER_MAP_CLIENT_ID = q2x7c9o0c2;
+				NAVER_MAP_CLIENT_ID = ee2hps0025;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
@@ -514,7 +514,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				NAVER_MAP_CLIENT_ID = q2x7c9o0c2;
+				NAVER_MAP_CLIENT_ID = ee2hps0025;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
@@ -693,7 +693,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				NAVER_MAP_CLIENT_ID = q2x7c9o0c2;
+				NAVER_MAP_CLIENT_ID = ee2hps0025;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",

@@ -1,6 +1,6 @@
-import React, {useCallback, useEffect, useRef, useState} from 'react';
-import {ImprovedLobbyScreen} from './src/screens/ImprovedLobbyScreen';
-import {SplashScreen} from './src/screens/SplashScreen';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ImprovedLobbyScreen } from './src/screens/ImprovedLobbyScreen';
+import { SplashScreen } from './src/screens/SplashScreen';
 import {
   View,
   Text,
@@ -8,15 +8,16 @@ import {
   StyleSheet,
   StatusBar,
   Platform,
+  SafeAreaView,
   Animated,
   Alert,
   PermissionsAndroid,
 } from 'react-native';
-import {useGameStore} from './src/store/useGameStore';
-import {usePlayerStore} from './src/store/usePlayerStore';
-import {useGameLogic} from './src/hooks/useGameLogic';
-import {PixelButton} from './src/components/pixel/PixelButton';
-import {NaverMapMarkerOverlay, NaverMapView} from '@mj-studio/react-native-naver-map';
+import { useGameStore } from './src/store/useGameStore';
+import { usePlayerStore } from './src/store/usePlayerStore';
+import { useGameLogic } from './src/hooks/useGameLogic';
+import { PixelButton } from './src/components/pixel/PixelButton';
+import { NaverMapMarkerOverlay, NaverMapView } from '@mj-studio/react-native-naver-map';
 
 const App = (): React.JSX.Element => {
   const [screen, setScreen] = useState('splash'); // Start with splash
@@ -65,8 +66,8 @@ const App = (): React.JSX.Element => {
 
   const confirmEndGame = useCallback(() => {
     Alert.alert('게임 종료', '정말 게임을 종료하고 방을 나가시겠습니까?', [
-      {text: '남아있기', style: 'cancel'},
-      {text: '게임끝내기', style: 'destructive', onPress: returnToLobby},
+      { text: '남아있기', style: 'cancel' },
+      { text: '게임끝내기', style: 'destructive', onPress: returnToLobby },
     ]);
   }, [returnToLobby]);
 
@@ -75,8 +76,8 @@ const App = (): React.JSX.Element => {
     setScreenParams(params || {});
   };
 
-  const {team, location, playerId} = usePlayerStore();
-  const {status, phaseEndsAt, players, settings} = useGameStore();
+  const { team, location, playerId } = usePlayerStore();
+  const { status, phaseEndsAt, players, settings } = useGameStore();
 
   // 게임 진입 시 위치 트래킹 시작(1회)
   useEffect(() => {
@@ -121,36 +122,36 @@ const App = (): React.JSX.Element => {
     lastShown.current = hidingCountdownSec;
 
     Animated.sequence([
-      Animated.timing(pulse, {toValue: 1.15, duration: 120, useNativeDriver: true}),
-      Animated.timing(pulse, {toValue: 1, duration: 120, useNativeDriver: true}),
+      Animated.timing(pulse, { toValue: 1.15, duration: 120, useNativeDriver: true }),
+      Animated.timing(pulse, { toValue: 1, duration: 120, useNativeDriver: true }),
     ]).start();
-  }, [screen, status, team, remainingSec, policeRemainingSec, pulse]);
+  }, [screen, status, remainingSec, pulse]);
 
   // 위치 좌표 계산 (항상 계산, 조건부 렌더링은 return에서 처리)
   const myCoord =
     location && typeof location.lat === 'number' && typeof location.lng === 'number'
-      ? {latitude: location.lat, longitude: location.lng}
+      ? { latitude: location.lat, longitude: location.lng }
       : null;
 
   // 게임 화면 데이터 계산 (항상 계산)
   const playersList = Array.from(players.values());
   const thieves = playersList.filter((p: any) => p.team === 'THIEF');
   const isPolice = team === 'POLICE';
-  
+
   // 경찰 화면에서 도둑들의 위치 정보 추출
   const thiefCoords = isPolice
     ? thieves
-        .filter((t: any) => {
-          const loc = t.location;
-          return loc && typeof loc.lat === 'number' && typeof loc.lng === 'number';
-        })
-        .map((t: any) => ({
-          playerId: t.playerId,
-          nickname: t.nickname,
-          latitude: t.location!.lat,
-          longitude: t.location!.lng,
-          state: t.thiefStatus?.state || 'FREE',
-        }))
+      .filter((t: any) => {
+        const loc = t.location;
+        return loc && typeof loc.lat === 'number' && typeof loc.lng === 'number';
+      })
+      .map((t: any) => ({
+        playerId: t.playerId,
+        nickname: t.nickname,
+        latitude: t.location!.lat,
+        longitude: t.location!.lng,
+        state: t.thiefStatus?.state || 'FREE',
+      }))
     : [];
 
   // 위치 업데이트 디버깅 (개발용) - 항상 호출, 조건부 로직은 내부에서 처리
@@ -182,7 +183,7 @@ const App = (): React.JSX.Element => {
   // ─────────────────────────────────────────────────────────────
   if (screen === 'game') {
     const roleLabel = team === 'POLICE' ? '🚔 경찰' : team === 'THIEF' ? '🏃 도둑' : '…';
-    
+
     // 숨는시간: HIDING 상태에서 딤드 오버레이 + 중앙 카운트다운 표시
     // - 도둑: 기본 숨는시간만
     // - 경찰: 기본 숨는시간 + 10초
@@ -195,16 +196,16 @@ const App = (): React.JSX.Element => {
     const hidingMs = (settings?.hidingSeconds ?? 0) * 1000;
     const chaseMs = (settings?.chaseSeconds ?? 0) * 1000;
     const gameStartAt = phaseEndsAt && status === 'HIDING' ? phaseEndsAt - hidingMs : null;
-    const gameEndsAt = gameStartAt ? gameStartAt + hidingMs + chaseMs : 
-                       (phaseEndsAt && status === 'CHASE' ? phaseEndsAt : null);
+    const gameEndsAt = gameStartAt ? gameStartAt + hidingMs + chaseMs :
+      (phaseEndsAt && status === 'CHASE' ? phaseEndsAt : null);
     const totalRemainingSec = gameEndsAt ? Math.max(0, Math.ceil((gameEndsAt - now) / 1000)) : 0;
 
     const bg = isPolice ? styles.containerPolice : styles.containerThief;
 
     return (
-      <View style={[styles.container, bg]}>
+      <SafeAreaView style={[styles.container, bg]}>
         <StatusBar barStyle="light-content" backgroundColor={isPolice ? '#001B44' : '#2D0B3A'} />
-        
+
         {/* HUD */}
         <View style={[styles.hud, isPolice ? styles.hudPolice : styles.hudThief]}>
           <View style={[styles.hudBadge, isPolice ? styles.hudBadgePolice : styles.hudBadgeThief]}>
@@ -219,213 +220,213 @@ const App = (): React.JSX.Element => {
         <View style={styles.contentArea}>
           {/* POLICE / THIEF 화면 분리 */}
           {isPolice ? (
-          <>
-            {/* MAP AREA */}
-            <View style={styles.mapContainer}>
-              {hasLocationPermission ? (
-                <NaverMapView
-                  style={styles.map}
-                  // Naver 지도 내장 "내 위치 버튼"은 Google FusedLocationSource를 사용하며,
-                  // play-services-location 버전/기기 환경에 따라 크래시가 날 수 있어 비활성화합니다.
-                  isShowLocationButton={false}
-                  // NOTE: 추적 모드(Follow)는 네이티브 위치 엔진을 사용하며,
-                  // 일부 기기/환경에서 멈춤(파란 화면/먹통) 이슈가 있을 수 있어
-                  // 앱의 LocationService(react-native-geolocation-service) 기반으로 직접 카메라/마커를 제어합니다.
-                  initialCamera={{latitude: 37.5665, longitude: 126.978, zoom: 15}}
-                  camera={myCoord ? {latitude: myCoord.latitude, longitude: myCoord.longitude, zoom: 16} : undefined}
-                  animationDuration={200}
-                >
-                  {/* 내 위치 마커 (경찰) */}
-                  {myCoord ? (
-                    <NaverMapMarkerOverlay
-                      key={`marker-me-${myCoord.latitude}-${myCoord.longitude}`}
-                      latitude={myCoord.latitude}
-                      longitude={myCoord.longitude}
-                      width={25}
-                      height={25}
-                      anchor={{x: 0.5, y: 1}}
-                    >
-                      <View collapsable={false} style={styles.policeMarkerIcon}>
-                        <Text style={styles.markerEmoji}>👮</Text>
-                      </View>
-                    </NaverMapMarkerOverlay>
-                  ) : null}
-                  {/* 도둑들의 위치 마커 (경찰 화면에서만) */}
-                  {thiefCoords.map((thief) => {
-                    const isCaptured = thief.state === 'CAPTURED';
-                    const isJailed = thief.state === 'JAILED';
-                    const isFree = thief.state === 'FREE';
-                    const borderColor = isCaptured 
-                      ? '#666' 
-                      : isJailed 
-                        ? '#FFAA00' 
-                        : '#F9F871';
-                    
-                    return (
+            <>
+              {/* MAP AREA */}
+              <View style={styles.mapContainer}>
+                {hasLocationPermission ? (
+                  <NaverMapView
+                    style={styles.map}
+                    // Naver 지도 내장 "내 위치 버튼"은 Google FusedLocationSource를 사용하며,
+                    // play-services-location 버전/기기 환경에 따라 크래시가 날 수 있어 비활성화합니다.
+                    isShowLocationButton={false}
+                    // NOTE: 추적 모드(Follow)는 네이티브 위치 엔진을 사용하며,
+                    // 일부 기기/환경에서 멈춤(파란 화면/먹통) 이슈가 있을 수 있어
+                    // 앱의 LocationService(react-native-geolocation-service) 기반으로 직접 카메라/마커를 제어합니다.
+                    initialCamera={{ latitude: 37.5665, longitude: 126.978, zoom: 15 }}
+                    camera={myCoord ? { latitude: myCoord.latitude, longitude: myCoord.longitude, zoom: 16 } : undefined}
+                    animationDuration={200}
+                  >
+                    {/* 내 위치 마커 (경찰) */}
+                    {myCoord ? (
                       <NaverMapMarkerOverlay
-                        key={`marker-thief-${thief.playerId}-${thief.latitude}-${thief.longitude}`}
-                        latitude={thief.latitude}
-                        longitude={thief.longitude}
+                        key={`marker-me-${myCoord.latitude}-${myCoord.longitude}`}
+                        latitude={myCoord.latitude}
+                        longitude={myCoord.longitude}
                         width={25}
                         height={25}
-                        anchor={{x: 0.5, y: 1}}
+                        anchor={{ x: 0.5, y: 1 }}
                       >
-                        <View collapsable={false} style={[
-                          styles.thiefMarkerIcon, 
-                          {borderColor},
-                          isCaptured && styles.thiefMarkerIconCaptured
-                        ]}>
-                          <Text style={[styles.markerEmoji, isCaptured && styles.markerEmojiCaptured]}>🦹</Text>
+                        <View collapsable={false} style={styles.policeMarkerIcon}>
+                          <Text style={styles.markerEmoji}>👮</Text>
                         </View>
                       </NaverMapMarkerOverlay>
-                    );
-                  })}
-                </NaverMapView>
-              ) : (
-                <View style={styles.mapFallback}>
-                  <Text style={styles.mapPlaceholder}>🗺️ 지도</Text>
-                  <Text style={styles.mapSubText}>위치 권한이 필요합니다</Text>
-                </View>
-              )}
-            </View>
+                    ) : null}
+                    {/* 도둑들의 위치 마커 (경찰 화면에서만) */}
+                    {thiefCoords.map((thief) => {
+                      const isCaptured = thief.state === 'CAPTURED';
+                      const isJailed = thief.state === 'JAILED';
+                      const isFree = thief.state === 'FREE';
+                      const borderColor = isCaptured
+                        ? '#666'
+                        : isJailed
+                          ? '#FFAA00'
+                          : '#F9F871';
 
-            {/* THIEVES LIST */}
-            <View style={styles.listPanel}>
-              <Text style={styles.listTitle}>THIEVES</Text>
-              {thieves.length === 0 ? (
-                <Text style={styles.listEmpty}>도둑 없음</Text>
-              ) : (
-                <View style={styles.thievesListContainer}>
-                  {thieves.map((t: any) => {
-                    const canCapture = status === 'CHASE' && t.thiefStatus?.state === 'FREE';
-                    const isCaptured = t.thiefStatus?.state === 'CAPTURED';
-                    const label =
-                      t.thiefStatus?.state === 'CAPTURED'
-                        ? '검거됨'
-                        : t.thiefStatus?.state === 'JAILED'
-                          ? '감금됨'
-                          : '자유';
-                    return (
-                      <TouchableOpacity
-                        key={t.playerId}
-                        disabled={!canCapture}
-                        onPress={() => canCapture && gameLogic.attemptCapture(t.playerId)}
-                        style={[
-                          styles.listItem,
-                          styles.listItemGrid,
-                          !canCapture && styles.listItemDisabled,
-                          canCapture && styles.listItemClickable,
-                          isCaptured && styles.listItemCaptured,
-                        ]}
+                      return (
+                        <NaverMapMarkerOverlay
+                          key={`marker-thief-${thief.playerId}-${thief.latitude}-${thief.longitude}`}
+                          latitude={thief.latitude}
+                          longitude={thief.longitude}
+                          width={25}
+                          height={25}
+                          anchor={{ x: 0.5, y: 1 }}
+                        >
+                          <View collapsable={false} style={[
+                            styles.thiefMarkerIcon,
+                            { borderColor },
+                            isCaptured && styles.thiefMarkerIconCaptured
+                          ]}>
+                            <Text style={[styles.markerEmoji, isCaptured && styles.markerEmojiCaptured]}>🦹</Text>
+                          </View>
+                        </NaverMapMarkerOverlay>
+                      );
+                    })}
+                  </NaverMapView>
+                ) : (
+                  <View style={styles.mapFallback}>
+                    <Text style={styles.mapPlaceholder}>🗺️ 지도</Text>
+                    <Text style={styles.mapSubText}>위치 권한이 필요합니다</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* THIEVES LIST */}
+              <View style={styles.listPanel}>
+                <Text style={styles.listTitle}>THIEVES</Text>
+                {thieves.length === 0 ? (
+                  <Text style={styles.listEmpty}>도둑 없음</Text>
+                ) : (
+                  <View style={styles.thievesListContainer}>
+                    {thieves.map((t: any) => {
+                      const canCapture = status === 'CHASE' && t.thiefStatus?.state === 'FREE';
+                      const isCaptured = t.thiefStatus?.state === 'CAPTURED';
+                      const label =
+                        t.thiefStatus?.state === 'CAPTURED'
+                          ? '검거됨'
+                          : t.thiefStatus?.state === 'JAILED'
+                            ? '감금됨'
+                            : '자유';
+                      return (
+                        <TouchableOpacity
+                          key={t.playerId}
+                          disabled={!canCapture}
+                          onPress={() => canCapture && gameLogic.attemptCapture(t.playerId)}
+                          style={[
+                            styles.listItem,
+                            styles.listItemGrid,
+                            !canCapture && styles.listItemDisabled,
+                            canCapture && styles.listItemClickable,
+                            isCaptured && styles.listItemCaptured,
+                          ]}
+                        >
+                          <Text style={[
+                            styles.listItemText,
+                            isCaptured && styles.listItemTextCaptured
+                          ]}>
+                            {t.nickname}
+                          </Text>
+                          <Text style={[
+                            styles.listItemBadge,
+                            t.thiefStatus?.state === 'CAPTURED' && styles.listItemBadgeCaptured,
+                            t.thiefStatus?.state === 'JAILED' && styles.listItemBadgeJailed,
+                            t.thiefStatus?.state === 'FREE' && styles.listItemBadgeFree,
+                          ]}>
+                            {label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+                <Text style={styles.listHint}>
+                  {status !== 'CHASE' ? '추격전 시작 후 검거 가능합니다' : '자유 상태의 도둑을 눌러 검거 시도'}
+                </Text>
+              </View>
+            </>
+          ) : (
+            <>
+              <View style={styles.mapContainer}>
+                {hasLocationPermission ? (
+                  <NaverMapView
+                    style={styles.map}
+                    isShowLocationButton={false}
+                    initialCamera={{ latitude: 37.5665, longitude: 126.978, zoom: 15 }}
+                    camera={myCoord ? { latitude: myCoord.latitude, longitude: myCoord.longitude, zoom: 16 } : undefined}
+                    animationDuration={200}
+                  >
+                    {myCoord ? (
+                      <NaverMapMarkerOverlay
+                        key={`marker-${myCoord.latitude}-${myCoord.longitude}`}
+                        latitude={myCoord.latitude}
+                        longitude={myCoord.longitude}
+                        width={25}
+                        height={25}
+                        anchor={{ x: 0.5, y: 1 }}
                       >
-                        <Text style={[
-                          styles.listItemText,
-                          isCaptured && styles.listItemTextCaptured
-                        ]}>
-                          {t.nickname}
-                        </Text>
-                        <Text style={[
-                          styles.listItemBadge,
-                          t.thiefStatus?.state === 'CAPTURED' && styles.listItemBadgeCaptured,
-                          t.thiefStatus?.state === 'JAILED' && styles.listItemBadgeJailed,
-                          t.thiefStatus?.state === 'FREE' && styles.listItemBadgeFree,
-                        ]}>
-                          {label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              )}
-              <Text style={styles.listHint}>
-                {status !== 'CHASE' ? '추격전 시작 후 검거 가능합니다' : '자유 상태의 도둑을 눌러 검거 시도'}
-              </Text>
-            </View>
-          </>
-        ) : (
-          <>
-            <View style={styles.mapContainer}>
-              {hasLocationPermission ? (
-                <NaverMapView
-                  style={styles.map}
-                  isShowLocationButton={false}
-                  initialCamera={{latitude: 37.5665, longitude: 126.978, zoom: 15}}
-                  camera={myCoord ? {latitude: myCoord.latitude, longitude: myCoord.longitude, zoom: 16} : undefined}
-                  animationDuration={200}
-                >
-                  {myCoord ? (
-                    <NaverMapMarkerOverlay
-                      key={`marker-${myCoord.latitude}-${myCoord.longitude}`}
-                      latitude={myCoord.latitude}
-                      longitude={myCoord.longitude}
-                      width={25}
-                      height={25}
-                      anchor={{x: 0.5, y: 1}}
-                    >
-                      <View collapsable={false} style={styles.thiefMarkerIcon}>
-                        <Text style={styles.markerEmoji}>🦹</Text>
-                      </View>
-                    </NaverMapMarkerOverlay>
-                  ) : null}
-                </NaverMapView>
-              ) : (
-                <View style={styles.mapFallback}>
-                  <Text style={styles.mapPlaceholder}>🗺️ 지도</Text>
-                  <Text style={styles.mapSubText}>위치 권한이 필요합니다</Text>
-                </View>
-              )}
-            </View>
-            {/* THIEVES LIST (도둑 화면: 검거 현황만 표시, 클릭 불가) */}
-            <View style={styles.listPanel}>
-              <Text style={styles.listTitle}>THIEVES</Text>
-              {thieves.length === 0 ? (
-                <Text style={styles.listEmpty}>도둑 없음</Text>
-              ) : (
-                <View style={styles.thievesListContainer}>
-                  {thieves.map((t: any) => {
-                    const isCaptured = t.thiefStatus?.state === 'CAPTURED';
-                    const label =
-                      t.thiefStatus?.state === 'CAPTURED'
-                        ? '검거됨'
-                        : t.thiefStatus?.state === 'JAILED'
-                          ? '감금됨'
-                          : '자유';
-                    const isMe = t.playerId === playerId;
-                    return (
-                      <View
-                        key={t.playerId}
-                        style={[
-                          styles.listItem,
-                          styles.listItemGrid,
-                          styles.listItemReadOnly,
-                          isMe && styles.listItemMe,
-                          isCaptured && styles.listItemCaptured,
-                        ]}
-                      >
-                        <Text style={[
-                          styles.listItemText,
-                          isCaptured && styles.listItemTextCaptured
-                        ]}>
-                          {isMe ? `나 (${t.nickname})` : t.nickname}
-                        </Text>
-                        <Text style={[
-                          styles.listItemBadge,
-                          t.thiefStatus?.state === 'CAPTURED' && styles.listItemBadgeCaptured,
-                          t.thiefStatus?.state === 'JAILED' && styles.listItemBadgeJailed,
-                          t.thiefStatus?.state === 'FREE' && styles.listItemBadgeFree,
-                        ]}>
-                          {label}
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
-              <Text style={styles.listHint}>
-                경찰을 피해 생존하세요
-              </Text>
-            </View>
-          </>
+                        <View collapsable={false} style={styles.thiefMarkerIcon}>
+                          <Text style={styles.markerEmoji}>🦹</Text>
+                        </View>
+                      </NaverMapMarkerOverlay>
+                    ) : null}
+                  </NaverMapView>
+                ) : (
+                  <View style={styles.mapFallback}>
+                    <Text style={styles.mapPlaceholder}>🗺️ 지도</Text>
+                    <Text style={styles.mapSubText}>위치 권한이 필요합니다</Text>
+                  </View>
+                )}
+              </View>
+              {/* THIEVES LIST (도둑 화면: 검거 현황만 표시, 클릭 불가) */}
+              <View style={styles.listPanel}>
+                <Text style={styles.listTitle}>THIEVES</Text>
+                {thieves.length === 0 ? (
+                  <Text style={styles.listEmpty}>도둑 없음</Text>
+                ) : (
+                  <View style={styles.thievesListContainer}>
+                    {thieves.map((t: any) => {
+                      const isCaptured = t.thiefStatus?.state === 'CAPTURED';
+                      const label =
+                        t.thiefStatus?.state === 'CAPTURED'
+                          ? '검거됨'
+                          : t.thiefStatus?.state === 'JAILED'
+                            ? '감금됨'
+                            : '자유';
+                      const isMe = t.playerId === playerId;
+                      return (
+                        <View
+                          key={t.playerId}
+                          style={[
+                            styles.listItem,
+                            styles.listItemGrid,
+                            styles.listItemReadOnly,
+                            isMe && styles.listItemMe,
+                            isCaptured && styles.listItemCaptured,
+                          ]}
+                        >
+                          <Text style={[
+                            styles.listItemText,
+                            isCaptured && styles.listItemTextCaptured
+                          ]}>
+                            {isMe ? `나 (${t.nickname})` : t.nickname}
+                          </Text>
+                          <Text style={[
+                            styles.listItemBadge,
+                            t.thiefStatus?.state === 'CAPTURED' && styles.listItemBadgeCaptured,
+                            t.thiefStatus?.state === 'JAILED' && styles.listItemBadgeJailed,
+                            t.thiefStatus?.state === 'FREE' && styles.listItemBadgeFree,
+                          ]}>
+                            {label}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+                <Text style={styles.listHint}>
+                  경찰을 피해 생존하세요
+                </Text>
+              </View>
+            </>
           )}
         </View>
 
@@ -440,12 +441,12 @@ const App = (): React.JSX.Element => {
         {/* HIDING PHASE: 화면 딤 + 픽셀 카운트다운만 표시 */}
         {showHidingCountdown && (
           <View style={styles.countdownOverlay}>
-            <Animated.View style={[styles.countdownBox, {transform: [{scale: pulse}]}]}>
+            <Animated.View style={[styles.countdownBox, { transform: [{ scale: pulse }] }]}>
               <Text style={styles.countdownText}>{hidingCountdownSec}</Text>
             </Animated.View>
           </View>
         )}
-      </View>
+      </SafeAreaView>
     );
   }
 
@@ -457,7 +458,7 @@ const App = (): React.JSX.Element => {
       <StatusBar barStyle="light-content" backgroundColor="#2D2B55" />
       <View style={styles.resultContent}>
         <Text style={styles.resultTitle}>GAME OVER</Text>
-        
+
         <View style={styles.resultCard}>
           <Text style={styles.winnerTitle}>🏆 WINNER 🏆</Text>
           <Text style={styles.winnerTeam}>POLICE TEAM</Text>
@@ -488,7 +489,7 @@ const styles = StyleSheet.create({
   fontMono: {
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
-  
+
   // -- Game Screen --
   hud: {
     flexDirection: 'row',
@@ -667,7 +668,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
     textShadowColor: '#FF0055',
-    textShadowOffset: {width: 6, height: 6},
+    textShadowOffset: { width: 6, height: 6 },
     textShadowRadius: 0,
     letterSpacing: 2,
   },
@@ -698,7 +699,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
-  
+
   // -- Result Screen --
   resultContent: {
     flex: 1,
@@ -712,7 +713,7 @@ const styles = StyleSheet.create({
     color: '#FF0055',
     marginBottom: 30,
     textShadowColor: '#00E5FF',
-    textShadowOffset: {width: 4, height: 4},
+    textShadowOffset: { width: 4, height: 4 },
     textShadowRadius: 0,
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
@@ -725,7 +726,7 @@ const styles = StyleSheet.create({
     width: '100%',
     marginBottom: 40,
     shadowColor: '#000',
-    shadowOffset: {width: 8, height: 8},
+    shadowOffset: { width: 8, height: 8 },
     shadowOpacity: 1,
     shadowRadius: 0,
   },
@@ -752,7 +753,7 @@ const styles = StyleSheet.create({
     borderColor: '#000',
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: {width: 4, height: 4},
+    shadowOffset: { width: 4, height: 4 },
     shadowOpacity: 1,
     shadowRadius: 0,
   },
@@ -764,7 +765,7 @@ const styles = StyleSheet.create({
     borderColor: '#000',
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: {width: 4, height: 4},
+    shadowOffset: { width: 4, height: 4 },
     shadowOpacity: 1,
     shadowRadius: 0,
   },
@@ -774,7 +775,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
-  
+
   // -- Map Marker Icons --
   policeMarkerIcon: {
     width: 25,
@@ -786,7 +787,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.3,
     shadowRadius: 2,
     elevation: 3,
@@ -801,7 +802,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.3,
     shadowRadius: 2,
     elevation: 3,
