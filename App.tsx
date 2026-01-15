@@ -18,7 +18,11 @@ import { useGameStore } from './src/store/useGameStore';
 import { usePlayerStore } from './src/store/usePlayerStore';
 import { useGameLogic } from './src/hooks/useGameLogic';
 import { PixelButton } from './src/components/pixel/PixelButton';
-import { NaverMapMarkerOverlay, NaverMapView } from '@mj-studio/react-native-naver-map';
+import {
+  NaverMapMarkerOverlay,
+  NaverMapView,
+  type NaverMapViewRef,
+} from '@mj-studio/react-native-naver-map';
 import Geolocation from 'react-native-geolocation-service';
 
 const App = (): React.JSX.Element => {
@@ -175,7 +179,7 @@ const App = (): React.JSX.Element => {
       Animated.timing(pulse, { toValue: 1.15, duration: 120, useNativeDriver: true }),
       Animated.timing(pulse, { toValue: 1, duration: 120, useNativeDriver: true }),
     ]).start();
-  }, [screen, status, remainingSec, pulse]);
+  }, [screen, status, remainingSec, policeRemainingSec, team, pulse]);
 
   // 게임 화면 데이터 계산 (항상 계산)
   const playersList = Array.from(players.values());
@@ -269,6 +273,7 @@ const App = (): React.JSX.Element => {
               <View style={styles.mapContainer}>
                 {hasLocationPermission ? (
                   <NaverMapView
+                    ref={mapRef}
                     style={styles.map}
                     // Naver 지도 내장 "내 위치 버튼"은 Google FusedLocationSource를 사용하며,
                     // play-services-location 버전/기기 환경에 따라 크래시가 날 수 있어 비활성화합니다.
@@ -277,8 +282,6 @@ const App = (): React.JSX.Element => {
                     // 일부 기기/환경에서 멈춤(파란 화면/먹통) 이슈가 있을 수 있어
                     // 앱의 LocationService(react-native-geolocation-service) 기반으로 직접 카메라/마커를 제어합니다.
                     initialCamera={{ latitude: 37.5665, longitude: 126.978, zoom: 15 }}
-                    camera={myLocationCoord ? { latitude: myLocationCoord.latitude, longitude: myLocationCoord.longitude, zoom: 16 } : undefined}
-                    animationDuration={200}
                   >
                     {/* 내 위치 마커 (경찰) */}
                     {myLocationCoord ? (
@@ -392,11 +395,10 @@ const App = (): React.JSX.Element => {
               <View style={styles.mapContainer}>
                 {hasLocationPermission ? (
                   <NaverMapView
+                    ref={mapRef}
                     style={styles.map}
                     isShowLocationButton={false}
                     initialCamera={{ latitude: 37.5665, longitude: 126.978, zoom: 15 }}
-                    camera={myLocationCoord ? { latitude: myLocationCoord.latitude, longitude: myLocationCoord.longitude, zoom: 16 } : undefined}
-                    animationDuration={200}
                   >
                     {myLocationCoord ? (
                       <NaverMapMarkerOverlay
