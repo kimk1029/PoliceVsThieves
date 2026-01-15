@@ -268,13 +268,26 @@ const App = (): React.JSX.Element => {
     return () => clearInterval(id);
   }, [screen]);
 
+  // HIDING 종료 시각을 저장 (CHASE로 넘어가도 유지)
+  const hidingEndsAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (status === 'HIDING' && phaseEndsAt) {
+      hidingEndsAtRef.current = phaseEndsAt;
+    }
+    if (status === 'LOBBY' || status === 'END') {
+      hidingEndsAtRef.current = null;
+    }
+  }, [status, phaseEndsAt]);
+
   // 기본 카운트다운(서버 기준) - HIDING 종료까지 남은 시간
   const remainingSec = phaseEndsAt ? Math.max(0, Math.ceil((phaseEndsAt - now) / 1000)) : 0;
 
   // 요구사항: 경찰은 도둑보다 +10초 더 카운트(=추가로 10초 더 화면을 가리고 대기)
   const policeExtraMs = 10_000;
   const policeCountdownEndsAt =
-    phaseEndsAt && team === 'POLICE' ? phaseEndsAt + policeExtraMs : phaseEndsAt;
+    team === 'POLICE' && hidingEndsAtRef.current
+      ? hidingEndsAtRef.current + policeExtraMs
+      : phaseEndsAt;
   const policeRemainingSec = policeCountdownEndsAt
     ? Math.max(0, Math.ceil((policeCountdownEndsAt - now) / 1000))
     : 0;
@@ -330,17 +343,21 @@ const App = (): React.JSX.Element => {
     ? playersList
       .filter((p: any) => {
         const loc = p.location;
+        const id = p.playerId || p.id;
+        if (!id) return false;
+        const isSelf = id === playerId;
+        const isLikelyThief =
+          p.team === 'THIEF' || p.thiefStatus != null || p.team == null;
         return (
-          p.playerId !== playerId &&
+          !isSelf &&
+          isLikelyThief &&
           loc &&
           typeof loc.lat === 'number' &&
-          typeof loc.lng === 'number' &&
-          // 팀 정보가 없으면 도둑으로 간주해 표시
-          (p.team !== 'POLICE' || p.team == null)
+          typeof loc.lng === 'number'
         );
       })
       .map((p: any) => ({
-        playerId: p.playerId,
+        playerId: p.playerId || p.id,
         nickname: p.nickname,
         latitude: p.location!.lat,
         longitude: p.location!.lng,
@@ -411,8 +428,8 @@ const App = (): React.JSX.Element => {
     if (screen === 'game' && myLocationCoord) {
       console.log('[App] 📍 My location updated:', myLocationCoord);
     }
-    if (screen === 'game' && isPolice && thiefCoords.length > 0) {
-      console.log('[App] 👥 Thieves locations:', thiefCoords.length);
+    if (screen === 'game' && isPolice && policeMapCoords.length > 0) {
+      console.log('[App] 👥 Police map coords:', policeMapCoords.length);
     }
     if (screen === 'game' && !isPolice && policeCoords.length > 0) {
       console.log('[App] 👮 Police locations:', policeCoords.length);
@@ -420,7 +437,7 @@ const App = (): React.JSX.Element => {
     if (screen === 'game' && !isPolice && otherThiefCoords.length > 0) {
       console.log('[App] 🦹 Other thieves locations:', otherThiefCoords.length);
     }
-  }, [screen, myLocationCoord?.latitude, myLocationCoord?.longitude, isPolice, thiefCoords.length, policeCoords.length, otherThiefCoords.length]);
+  }, [screen, myLocationCoord?.latitude, myLocationCoord?.longitude, isPolice, policeMapCoords.length, policeCoords.length, otherThiefCoords.length]);
 
   // ─────────────────────────────────────────────────────────────
   // 🚀 SPLASH SCREEN

@@ -152,10 +152,17 @@ export const useGameLogic = () => {
           case 'location:update': {
             const data = message.data;
             if (data?.playerId && data?.location) {
+              console.log('[GameLogic][RX location:update]', {
+                playerId: data.playerId,
+                team: data.team,
+                location: data.location,
+              });
               updatePlayer(data.playerId, {
                 location: data.location,
                 team: data.team,
               });
+            } else {
+              console.log('[GameLogic][RX location:update] invalid payload', message.data);
             }
             break;
           }
@@ -522,9 +529,21 @@ export const useGameLogic = () => {
     (location: Location) => {
       const {roomId: currentRoomId} = useGameStore.getState();
       const {playerId: currentPlayerId} = usePlayerStore.getState();
-      if (!wsClient.isConnected() || !currentRoomId || !currentPlayerId) return;
+      if (!wsClient.isConnected() || !currentRoomId || !currentPlayerId) {
+        console.log('[GameLogic][TX location:update] skipped', {
+          connected: wsClient.isConnected(),
+          roomId: currentRoomId,
+          playerId: currentPlayerId,
+        });
+        return;
+      }
       wsClient.send({
         type: 'location:update',
+        playerId: currentPlayerId,
+        roomId: currentRoomId,
+        payload: {lat: location.lat, lng: location.lng, accuracy: location.accuracy},
+      });
+      console.log('[GameLogic][TX location:update]', {
         playerId: currentPlayerId,
         roomId: currentRoomId,
         payload: {lat: location.lat, lng: location.lng, accuracy: location.accuracy},
