@@ -402,12 +402,29 @@ const App = (): React.JSX.Element => {
       }))
     : [];
 
-  // 다른 플레이어 마커 부드럽게 이동
+  // 다른 플레이어 마커 부드럽게 이동 (최적화: 실제 변경된 것만 업데이트)
+  const lastMarkerPositions = useRef<Map<string, { lat: number; lng: number }>>(new Map());
   useEffect(() => {
     const nextIds = new Set<string>();
+    const MIN_DISTANCE_FOR_UPDATE = 0.00001; // 약 1m 정도의 변화만 감지
+
     const upsert = (playerId: string, latitude: number, longitude: number) => {
       const id = `player-${playerId}`;
       nextIds.add(id);
+
+      // 이전 위치와 비교하여 충분히 이동했을 때만 업데이트
+      const lastPos = lastMarkerPositions.current.get(id);
+      if (lastPos) {
+        const latDiff = Math.abs(latitude - lastPos.lat);
+        const lngDiff = Math.abs(longitude - lastPos.lng);
+        if (latDiff < MIN_DISTANCE_FOR_UPDATE && lngDiff < MIN_DISTANCE_FOR_UPDATE) {
+          // 위치 변화가 거의 없으면 스킵 (깜빡임 방지)
+          return;
+        }
+      }
+
+      // 위치가 충분히 변경되었거나 첫 업데이트인 경우
+      lastMarkerPositions.current.set(id, { lat: latitude, lng: longitude });
       setSmoothTarget(id, { latitude, longitude }, 350);
     };
 
@@ -420,6 +437,7 @@ const App = (): React.JSX.Element => {
     for (const key of Array.from(map.keys())) {
       if (key.startsWith('player-') && !nextIds.has(key)) {
         map.delete(key);
+        lastMarkerPositions.current.delete(key);
       }
     }
   }, [policeMapCoords, policeCoords, otherThiefCoords, setSmoothTarget]);

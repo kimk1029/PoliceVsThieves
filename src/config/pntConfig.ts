@@ -1,6 +1,9 @@
-import {NativeModules} from 'react-native';
+import {NativeModules, Platform} from 'react-native';
 
-const DEFAULT_API_BASE_URL = 'http://localhost:9001';
+// Android 에뮬레이터에서는 localhost 대신 10.0.2.2 사용 (호스트 머신)
+const DEFAULT_API_BASE_URL = Platform.OS === 'android' 
+  ? 'http://10.0.2.2:9001' 
+  : 'http://localhost:9001';
 
 function normalizeBaseUrl(url: string): string {
   return url.trim().replace(/\/+$/, '');

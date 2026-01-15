@@ -1,4 +1,4 @@
-import {useState, useEffect, useCallback} from 'react';
+import {useState, useEffect, useCallback, useRef} from 'react';
 import {Alert} from 'react-native';
 import {WebSocketClient} from '../services/websocket/WebSocketClient';
 import {LocationService} from '../services/location/LocationService';
@@ -19,6 +19,10 @@ export const useGameLogic = () => {
 
   const {playerId, nickname, team, updateLocation} = usePlayerStore();
   const {roomId, players, setRoomInfo, setPlayers, updatePlayer, addChatMessage} = useGameStore();
+
+  // 위치 업데이트 스로틀링 (깜빡임 방지)
+  const locationUpdateTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const lastLocationUpdate = useRef<Map<string, { lat: number; lng: number; timestamp: number }>>(new Map());
 
   // 앱 실행 시 자동 연결
   useEffect(() => {
@@ -77,19 +81,25 @@ export const useGameLogic = () => {
 
       // 메시지 핸들러 등록
       wsClient.onMessage((message: any) => {
-        console.log('[GameLogic] Received message:', message.type, message);
-        
-        // location:update 메시지 특별 로깅
-        if (message.type === 'location:update') {
-          logLocation('RX location:update RAW', {
-            message,
-            hasData: !!message.data,
-            dataKeys: message.data ? Object.keys(message.data) : [],
-            fullMessage: JSON.stringify(message),
-          });
-        }
+        try {
+          if (!message || typeof message !== 'object' || !message.type) {
+            console.warn('[GameLogic] Invalid message format', message);
+            return;
+          }
 
-        switch (message.type) {
+          console.log('[GameLogic] Received message:', message.type, message);
+          
+          // location:update 메시지 특별 로깅
+          if (message.type === 'location:update') {
+            logLocation('RX location:update RAW', {
+              message,
+              hasData: !!message.data,
+              dataKeys: message.data ? Object.keys(message.data) : [],
+              fullMessage: JSON.stringify(message),
+            });
+          }
+
+          switch (message.type) {
           case 'room:created':
           case 'ROOM_CREATED':
             console.log('[GameLogic] Room created, roomId:', message.data?.roomId);
@@ -161,19 +171,69 @@ export const useGameLogic = () => {
             break;
 
           case 'location:update': {
-            const data = message.data;
-            if (data?.playerId && data?.location) {
+            try {
+              const data = message.data;
+              if (!data?.playerId || !data?.location) {
+                logLocation('RX location:update invalid payload', message.data);
+                break;
+              }
+
+              const playerId = data.playerId;
+              const newLocation = data.location;
+              const lastUpdate = lastLocationUpdate.current.get(playerId);
+
+              // 최소 거리 체크 (5m 이상 이동했을 때만 업데이트) - 깜빡임 방지
+              const MIN_DISTANCE_METERS = 5;
+              if (lastUpdate) {
+                const distance = Math.sqrt(
+                  Math.pow((newLocation.lat - lastUpdate.lat) * 111000, 2) +
+                  Math.pow((newLocation.lng - lastUpdate.lng) * 111000, 2)
+                );
+                if (distance < MIN_DISTANCE_METERS) {
+                  // 거리가 너무 가까우면 스로틀링 (최대 1초에 1번)
+                  const existingTimer = locationUpdateTimers.current.get(playerId);
+                  if (existingTimer) {
+                    clearTimeout(existingTimer);
+                  }
+                  locationUpdateTimers.current.set(
+                    playerId,
+                    setTimeout(() => {
+                      lastLocationUpdate.current.set(playerId, {
+                        lat: newLocation.lat,
+                        lng: newLocation.lng,
+                        timestamp: Date.now(),
+                      });
+                      updatePlayer(playerId, {
+                        location: newLocation,
+                        team: data.team,
+                      });
+                      locationUpdateTimers.current.delete(playerId);
+                    }, 1000)
+                  );
+                  break;
+                }
+              }
+
+              // 충분히 이동했거나 첫 업데이트인 경우 즉시 업데이트
+              lastLocationUpdate.current.set(playerId, {
+                lat: newLocation.lat,
+                lng: newLocation.lng,
+                timestamp: Date.now(),
+              });
+
               logLocation('RX location:update', {
                 playerId: data.playerId,
                 team: data.team,
                 location: data.location,
               });
-              updatePlayer(data.playerId, {
-                location: data.location,
+
+              updatePlayer(playerId, {
+                location: newLocation,
                 team: data.team,
               });
-            } else {
-              logLocation('RX location:update invalid payload', message.data);
+            } catch (error) {
+              console.error('[GameLogic] Error processing location:update', error);
+              logLocation('RX location:update error', { error: String(error), message });
             }
             break;
           }
@@ -335,6 +395,18 @@ export const useGameLogic = () => {
               setRoomInfo({status: 'END', result: message.data});
             }
             break;
+
+          default:
+            // 알 수 없는 메시지 타입은 무시
+            break;
+        }
+        } catch (error) {
+          console.error('[GameLogic] Error processing message', {
+            error: String(error),
+            messageType: message?.type,
+            message: message,
+          });
+          // 에러가 발생해도 앱이 크래시되지 않도록 계속 진행
         }
       });
 
