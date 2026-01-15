@@ -18,6 +18,7 @@ import { useGameStore } from './src/store/useGameStore';
 import { usePlayerStore } from './src/store/usePlayerStore';
 import { useGameLogic } from './src/hooks/useGameLogic';
 import { PixelButton } from './src/components/pixel/PixelButton';
+import { logLocation } from './src/utils/locationLog';
 import {
   NaverMapMarkerOverlay,
   NaverMapView,
@@ -426,16 +427,16 @@ const App = (): React.JSX.Element => {
   // 위치 업데이트 디버깅 (개발용) - 항상 호출, 조건부 로직은 내부에서 처리
   useEffect(() => {
     if (screen === 'game' && myLocationCoord) {
-      console.log('[App] 📍 My location updated:', myLocationCoord);
+      logLocation('My location updated', myLocationCoord);
     }
     if (screen === 'game' && isPolice && policeMapCoords.length > 0) {
-      console.log('[App] 👥 Police map coords:', policeMapCoords.length);
+      logLocation('Police map coords', policeMapCoords.length);
     }
     if (screen === 'game' && !isPolice && policeCoords.length > 0) {
-      console.log('[App] 👮 Police locations:', policeCoords.length);
+      logLocation('Police locations', policeCoords.length);
     }
     if (screen === 'game' && !isPolice && otherThiefCoords.length > 0) {
-      console.log('[App] 🦹 Other thieves locations:', otherThiefCoords.length);
+      logLocation('Other thieves locations', otherThiefCoords.length);
     }
   }, [screen, myLocationCoord?.latitude, myLocationCoord?.longitude, isPolice, policeMapCoords.length, policeCoords.length, otherThiefCoords.length]);
 

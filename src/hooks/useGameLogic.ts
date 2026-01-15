@@ -6,6 +6,7 @@ import {useGameStore} from '../store/useGameStore';
 import {usePlayerStore} from '../store/usePlayerStore';
 import {Location} from '../types/game.types';
 import {getApiBaseUrl, getWsUrl, isStage} from '../config/pntConfig';
+import {logLocation} from '../utils/locationLog';
 
 const API_BASE_URL = getApiBaseUrl();
 const WS_URL = getWsUrl();
@@ -152,7 +153,7 @@ export const useGameLogic = () => {
           case 'location:update': {
             const data = message.data;
             if (data?.playerId && data?.location) {
-              console.log('[GameLogic][RX location:update]', {
+              logLocation('RX location:update', {
                 playerId: data.playerId,
                 team: data.team,
                 location: data.location,
@@ -162,7 +163,7 @@ export const useGameLogic = () => {
                 team: data.team,
               });
             } else {
-              console.log('[GameLogic][RX location:update] invalid payload', message.data);
+              logLocation('RX location:update invalid payload', message.data);
             }
             break;
           }
@@ -530,7 +531,7 @@ export const useGameLogic = () => {
       const {roomId: currentRoomId} = useGameStore.getState();
       const {playerId: currentPlayerId} = usePlayerStore.getState();
       if (!wsClient.isConnected() || !currentRoomId || !currentPlayerId) {
-        console.log('[GameLogic][TX location:update] skipped', {
+        logLocation('TX location:update skipped', {
           connected: wsClient.isConnected(),
           roomId: currentRoomId,
           playerId: currentPlayerId,
@@ -543,7 +544,7 @@ export const useGameLogic = () => {
         roomId: currentRoomId,
         payload: {lat: location.lat, lng: location.lng, accuracy: location.accuracy},
       });
-      console.log('[GameLogic][TX location:update]', {
+      logLocation('TX location:update', {
         playerId: currentPlayerId,
         roomId: currentRoomId,
         payload: {lat: location.lat, lng: location.lng, accuracy: location.accuracy},
