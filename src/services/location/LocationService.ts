@@ -20,7 +20,9 @@ export class LocationService {
       );
       return granted === PermissionsAndroid.RESULTS.GRANTED;
     }
-    return true; // iOS handles permissions automatically
+    // iOS: explicitly request authorization to trigger the system prompt
+    const auth = await Geolocation.requestAuthorization('whenInUse');
+    return auth === 'granted';
   }
 
   async checkPermission(): Promise<boolean> {
@@ -30,7 +32,9 @@ export class LocationService {
       );
       return granted;
     }
-    return true;
+    // iOS: ensure we have permission (will prompt if not determined)
+    const auth = await Geolocation.requestAuthorization('whenInUse');
+    return auth === 'granted';
   }
 
   async getCurrentLocation(): Promise<Location> {

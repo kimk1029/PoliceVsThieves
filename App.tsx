@@ -12,12 +12,18 @@ import {
   Animated,
   Alert,
   PermissionsAndroid,
+  Linking,
 } from 'react-native';
 import {useGameStore} from './src/store/useGameStore';
 import {usePlayerStore} from './src/store/usePlayerStore';
 import {useGameLogic} from './src/hooks/useGameLogic';
 import {PixelButton} from './src/components/pixel/PixelButton';
-import {NaverMapMarkerOverlay, NaverMapView} from '@mj-studio/react-native-naver-map';
+import {
+  NaverMapMarkerOverlay,
+  NaverMapView,
+  type NaverMapViewRef,
+} from '@mj-studio/react-native-naver-map';
+import Geolocation from 'react-native-geolocation-service';
 
 const App = (): React.JSX.Element => {
   const [screen, setScreen] = useState('splash'); // Start with splash
@@ -28,23 +34,41 @@ const App = (): React.JSX.Element => {
 
   // 게임 진입 시 위치 트래킹 시작(1회)
   const startedLocationRef = useRef(false);
-  const [hasLocationPermission, setHasLocationPermission] = useState(Platform.OS !== 'android');
+  const [hasLocationPermission, setHasLocationPermission] = useState(false);
 
   // 위치 권한은 "앱 시작 시" 한 번만 요청 (게임 화면 진입과 겹치면 화면/지도 렌더가 꼬일 수 있음)
   useEffect(() => {
-    if (Platform.OS !== 'android') return;
     (async () => {
       try {
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-          {
-            title: '위치 권한',
-            message: '게임 진행을 위해 현재 위치 권한이 필요합니다.',
-            buttonNegative: '취소',
-            buttonPositive: '허용',
-          },
-        );
-        setHasLocationPermission(granted === PermissionsAndroid.RESULTS.GRANTED);
+        if (Platform.OS === 'android') {
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+            {
+              title: '위치 권한',
+              message: '게임 진행을 위해 현재 위치 권한이 필요합니다.',
+              buttonNegative: '취소',
+              buttonPositive: '허용',
+            },
+          );
+          setHasLocationPermission(granted === PermissionsAndroid.RESULTS.GRANTED);
+          return;
+        }
+
+        // iOS: 명시적으로 requestAuthorization을 호출해야 시스템 권한 팝업이 뜨는 케이스가 많습니다.
+        const auth = await Geolocation.requestAuthorization('whenInUse');
+        const ok = auth === 'granted';
+        setHasLocationPermission(ok);
+
+        if (!ok) {
+          Alert.alert(
+            '위치 권한 필요',
+            'iOS 설정에서 이 앱의 위치 권한을 “앱 사용 중”으로 허용해주세요.',
+            [
+              {text: '닫기', style: 'cancel'},
+              {text: '설정 열기', onPress: () => Linking.openSettings()},
+            ],
+          );
+        }
       } catch (e) {
         console.log('[App] location permission request failed', e);
         setHasLocationPermission(false);
@@ -78,6 +102,36 @@ const App = (): React.JSX.Element => {
 
   const {team, location} = usePlayerStore();
   const {status, phaseEndsAt, players, settings} = useGameStore();
+
+  // 내 위치(스토어)를 지도 좌표로 변환
+  const myCoord =
+    location && typeof location.lat === 'number' && typeof location.lng === 'number'
+      ? {latitude: location.lat, longitude: location.lng}
+      : null;
+
+  // 지도 카메라를 내 위치로 따라오게 하기 위한 ref
+  const mapRef = useRef<NaverMapViewRef>(null);
+  const hasCenteredOnceRef = useRef(false);
+
+  // 게임 화면에서 내 위치가 갱신될 때마다 지도를 내 위치로 이동
+  useEffect(() => {
+    if (screen !== 'game') {
+      hasCenteredOnceRef.current = false;
+      return;
+    }
+    if (!myCoord) return;
+    if (!mapRef.current) return;
+
+    const duration = hasCenteredOnceRef.current ? 250 : 350;
+    hasCenteredOnceRef.current = true;
+    mapRef.current.animateCameraTo({
+      latitude: myCoord.latitude,
+      longitude: myCoord.longitude,
+      zoom: 16,
+      duration,
+      easing: 'EaseOut',
+    });
+  }, [screen, myCoord?.latitude, myCoord?.longitude]);
 
   // 게임 진입 시 위치 트래킹 시작(1회)
   useEffect(() => {
@@ -162,11 +216,6 @@ const App = (): React.JSX.Element => {
     const isPolice = team === 'POLICE';
     const bg = isPolice ? styles.containerPolice : styles.containerThief;
 
-    const myCoord =
-      location && typeof location.lat === 'number' && typeof location.lng === 'number'
-        ? {latitude: location.lat, longitude: location.lng}
-        : null;
-
     return (
       <SafeAreaView style={[styles.container, bg]}>
         <StatusBar barStyle="light-content" backgroundColor={isPolice ? '#001B44' : '#2D0B3A'} />
@@ -188,6 +237,7 @@ const App = (): React.JSX.Element => {
             <View style={styles.mapContainer}>
               {hasLocationPermission ? (
                 <NaverMapView
+                  ref={mapRef}
                   style={styles.map}
                   // Naver 지도 내장 "내 위치 버튼"은 Google FusedLocationSource를 사용하며,
                   // play-services-location 버전/기기 환경에 따라 크래시가 날 수 있어 비활성화합니다.
@@ -196,8 +246,6 @@ const App = (): React.JSX.Element => {
                   // 일부 기기/환경에서 멈춤(파란 화면/먹통) 이슈가 있을 수 있어
                   // 앱의 LocationService(react-native-geolocation-service) 기반으로 직접 카메라/마커를 제어합니다.
                   initialCamera={{latitude: 37.5665, longitude: 126.978, zoom: 15}}
-                  camera={myCoord ? {latitude: myCoord.latitude, longitude: myCoord.longitude, zoom: 16} : undefined}
-                  animationDuration={200}
                 >
                   {myCoord ? (
                     <NaverMapMarkerOverlay
@@ -255,11 +303,10 @@ const App = (): React.JSX.Element => {
             <View style={styles.mapContainer}>
               {hasLocationPermission ? (
                 <NaverMapView
+                  ref={mapRef}
                   style={styles.map}
                   isShowLocationButton={false}
                   initialCamera={{latitude: 37.5665, longitude: 126.978, zoom: 15}}
-                  camera={myCoord ? {latitude: myCoord.latitude, longitude: myCoord.longitude, zoom: 16} : undefined}
-                  animationDuration={200}
                 >
                   {myCoord ? (
                     <NaverMapMarkerOverlay
