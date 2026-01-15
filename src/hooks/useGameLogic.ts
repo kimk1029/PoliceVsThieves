@@ -329,10 +329,17 @@ export const useGameLogic = () => {
       });
 
       // 핸들러 등록 후 연결 시도
-      await wsClient.connect(WS_URL, playerId);
-      setIsConnected(true);
-      console.log('[GameLogic] ✅ Connected successfully!');
-      return true;
+      try {
+        await wsClient.connect(WS_URL, playerId);
+        setIsConnected(true);
+        console.log('[GameLogic] ✅ Connected successfully!');
+        console.log('[GameLogic] 🔗 Connected to:', WS_URL);
+        return true;
+      } catch (connectError) {
+        console.error('[GameLogic] ❌ Connection failed:', connectError);
+        setIsConnected(false);
+        throw connectError;
+      }
     } catch (error) {
       console.error('[GameLogic] ❌ Failed to connect:', error);
       console.error('[GameLogic] Error details:', {
@@ -528,27 +535,55 @@ export const useGameLogic = () => {
 
   const sendLocationUpdate = useCallback(
     (location: Location) => {
-      const {roomId: currentRoomId} = useGameStore.getState();
-      const {playerId: currentPlayerId} = usePlayerStore.getState();
-      if (!wsClient.isConnected() || !currentRoomId || !currentPlayerId) {
-        logLocation('TX location:update skipped', {
-          connected: wsClient.isConnected(),
-          roomId: currentRoomId,
+      try {
+        // 위치 데이터 유효성 검사
+        if (
+          !location ||
+          typeof location.lat !== 'number' ||
+          typeof location.lng !== 'number' ||
+          isNaN(location.lat) ||
+          isNaN(location.lng) ||
+          !isFinite(location.lat) ||
+          !isFinite(location.lng)
+        ) {
+          console.warn('[GameLogic] Invalid location data:', location);
+          return;
+        }
+
+        const {roomId: currentRoomId} = useGameStore.getState();
+        const {playerId: currentPlayerId} = usePlayerStore.getState();
+        
+        if (!wsClient.isConnected() || !currentRoomId || !currentPlayerId) {
+          logLocation('TX location:update skipped', {
+            connected: wsClient.isConnected(),
+            roomId: currentRoomId,
+            playerId: currentPlayerId,
+          });
+          return;
+        }
+
+        const payload = {
+          lat: location.lat,
+          lng: location.lng,
+          accuracy: typeof location.accuracy === 'number' ? location.accuracy : 0,
+        };
+
+        wsClient.send({
+          type: 'location:update',
           playerId: currentPlayerId,
+          roomId: currentRoomId,
+          payload,
         });
-        return;
+        
+        logLocation('TX location:update', {
+          playerId: currentPlayerId,
+          roomId: currentRoomId,
+          payload,
+        });
+      } catch (error) {
+        console.error('[GameLogic] sendLocationUpdate error:', error);
+        // 앱 크래시 방지: 에러를 로그만 남기고 계속 진행
       }
-      wsClient.send({
-        type: 'location:update',
-        playerId: currentPlayerId,
-        roomId: currentRoomId,
-        payload: {lat: location.lat, lng: location.lng, accuracy: location.accuracy},
-      });
-      logLocation('TX location:update', {
-        playerId: currentPlayerId,
-        roomId: currentRoomId,
-        payload: {lat: location.lat, lng: location.lng, accuracy: location.accuracy},
-      });
     },
     [wsClient]
   );

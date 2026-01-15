@@ -95,12 +95,27 @@ export class WebSocketClient {
             readyState: this.ws?.readyState,
             url: url
           });
+          // 에러 핸들러는 호출하되, 크래시 방지를 위해 try-catch 추가
+          try {
+            this.errorHandlers.forEach((handler) => {
+              try {
+                handler(new Error('WebSocket error'));
+              } catch (e) {
+                console.error('[WebSocketClient] Error handler failed', e);
+              }
+            });
+          } catch (e) {
+            console.error('[WebSocketClient] Error handling failed', e);
+          }
           if (!isResolved && !isRejected) {
             clearTimeout(timeout);
             isRejected = true;
-            this.errorHandlers.forEach((handler) => handler(new Error('WebSocket error')));
             if (this.ws) {
-              this.ws.close();
+              try {
+                this.ws.close();
+              } catch (e) {
+                console.error('[WebSocketClient] Close failed', e);
+              }
               this.ws = null;
             }
             reject(new Error('WebSocket connection failed'));
