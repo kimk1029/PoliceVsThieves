@@ -14,6 +14,7 @@ import {
   PermissionsAndroid,
   Linking,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useGameStore } from './src/store/useGameStore';
 import { usePlayerStore } from './src/store/usePlayerStore';
 import { useGameLogic } from './src/hooks/useGameLogic';
@@ -25,6 +26,7 @@ import {
   type NaverMapViewRef,
 } from '@mj-studio/react-native-naver-map';
 import Geolocation from 'react-native-geolocation-service';
+import KeepAwake from 'react-native-keep-awake';
 
 const App = (): React.JSX.Element => {
   const [screen, setScreen] = useState('splash'); // Start with splash
@@ -32,6 +34,44 @@ const App = (): React.JSX.Element => {
 
   // ✅ WebSocket/게임 로직은 앱 전체에서 1번만 생성해서 유지
   const gameLogic = useGameLogic();
+
+  // 크래시 로깅 (JS 에러)
+  useEffect(() => {
+    const ErrorUtilsAny = (global as any).ErrorUtils;
+    const previousHandler = ErrorUtilsAny?.getGlobalHandler?.();
+
+    if (ErrorUtilsAny?.setGlobalHandler) {
+      ErrorUtilsAny.setGlobalHandler((error: any, isFatal?: boolean) => {
+        const payload = {
+          tag: '[CRASH][JS]',
+          isFatal: !!isFatal,
+          message: String(error?.message || error),
+          stack: String(error?.stack || ''),
+          timestamp: Date.now(),
+        };
+        console.error(payload.tag, payload);
+        AsyncStorage.setItem('@pnt_last_crash', JSON.stringify(payload)).catch(() => null);
+
+        if (previousHandler) {
+          previousHandler(error, isFatal);
+        }
+      });
+    }
+
+    return () => {
+      if (ErrorUtilsAny?.setGlobalHandler && previousHandler) {
+        ErrorUtilsAny.setGlobalHandler(previousHandler);
+      }
+    };
+  }, []);
+
+  // 앱 실행 중 화면 꺼짐 방지
+  useEffect(() => {
+    KeepAwake.activate();
+    return () => {
+      KeepAwake.deactivate();
+    };
+  }, []);
 
   // 게임 진입 시 위치 트래킹 시작(1회)
   const startedLocationRef = useRef(false);
@@ -102,7 +142,7 @@ const App = (): React.JSX.Element => {
   };
 
   const { team, location, playerId } = usePlayerStore();
-  const { status, phaseEndsAt, players, settings } = useGameStore();
+  const { status, phaseEndsAt, players, settings, result } = useGameStore();
 
   // 내 위치(스토어)를 지도 좌표로 변환
   const myLocationCoord =
@@ -458,6 +498,33 @@ const App = (): React.JSX.Element => {
     }
   }, [screen, myLocationCoord?.latitude, myLocationCoord?.longitude, isPolice, policeMapCoords.length, policeCoords.length, otherThiefCoords.length]);
 
+  const renderResultScreen = () => {
+    const winner = result?.winner ?? 'POLICE';
+    const winnerLabel = winner === 'THIEF' ? 'THIEF TEAM' : 'POLICE TEAM';
+    const reason = result?.reason;
+
+    return (
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#2D2B55" />
+        <View style={styles.resultContent}>
+          <Text style={styles.resultTitle}>GAME OVER</Text>
+
+          <View style={styles.resultCard}>
+            <Text style={styles.winnerTitle}>🏆 WINNER 🏆</Text>
+            <Text style={styles.winnerTeam}>{winnerLabel}</Text>
+            {reason ? <Text style={styles.resultReason}>{reason}</Text> : null}
+          </View>
+
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={returnToLobby}>
+            <Text style={styles.buttonText}>RETURN TO LOBBY</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
   // ─────────────────────────────────────────────────────────────
   // 🚀 SPLASH SCREEN
   // ─────────────────────────────────────────────────────────────
@@ -476,6 +543,9 @@ const App = (): React.JSX.Element => {
   // 🎮 GAME SCREEN (Placeholder with Retro Style)
   // ─────────────────────────────────────────────────────────────
   if (screen === 'game') {
+    if (status === 'END') {
+      return renderResultScreen();
+    }
     const roleLabel = team === 'POLICE' ? '🚔 경찰' : team === 'THIEF' ? '🏃 도둑' : '…';
 
     // 숨는시간: HIDING 상태에서 딤드 오버레이 + 중앙 카운트다운 표시
@@ -813,27 +883,9 @@ const App = (): React.JSX.Element => {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // 🏁 RESULT SCREEN (Retro Style)
+  // 🏁 RESULT SCREEN (Fallback)
   // ─────────────────────────────────────────────────────────────
-  return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#2D2B55" />
-      <View style={styles.resultContent}>
-        <Text style={styles.resultTitle}>GAME OVER</Text>
-
-        <View style={styles.resultCard}>
-          <Text style={styles.winnerTitle}>🏆 WINNER 🏆</Text>
-          <Text style={styles.winnerTeam}>POLICE TEAM</Text>
-        </View>
-
-        <TouchableOpacity
-          style={styles.primaryButton}
-          onPress={returnToLobby}>
-          <Text style={styles.buttonText}>RETURN TO LOBBY</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+  return renderResultScreen();
 };
 
 const styles = StyleSheet.create({
@@ -1091,6 +1143,12 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 8, height: 8 },
     shadowOpacity: 1,
     shadowRadius: 0,
+  },
+  resultReason: {
+    marginTop: 10,
+    fontSize: 14,
+    color: '#333',
+    textAlign: 'center',
   },
   winnerTitle: {
     fontSize: 24,

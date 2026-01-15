@@ -1,5 +1,6 @@
 import {useState, useEffect, useCallback, useRef} from 'react';
 import {Alert} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {WebSocketClient} from '../services/websocket/WebSocketClient';
 import {LocationService} from '../services/location/LocationService';
 import {useGameStore} from '../store/useGameStore';
@@ -10,6 +11,7 @@ import {logLocation} from '../utils/locationLog';
 
 const API_BASE_URL = getApiBaseUrl();
 const WS_URL = getWsUrl();
+const ROOM_ID_KEY = '@police_vs_thieves_room_id';
 
 export const useGameLogic = () => {
   const [wsClient] = useState(() => new WebSocketClient());
@@ -24,6 +26,21 @@ export const useGameLogic = () => {
   const locationUpdateTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const lastLocationUpdate = useRef<Map<string, { lat: number; lng: number; timestamp: number }>>(new Map());
 
+  const [savedRoomId, setSavedRoomId] = useState<string | null>(null);
+  const rejoinAttemptedRef = useRef(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem(ROOM_ID_KEY)
+      .then((id) => setSavedRoomId(id))
+      .catch((error) => console.warn('[GameLogic] Failed to load saved roomId', error));
+  }, []);
+
+  useEffect(() => {
+    usePlayerStore.getState().loadNickname().catch((error) => {
+      console.warn('[GameLogic] Failed to load nickname', error);
+    });
+  }, []);
+
   // 앱 실행 시 자동 연결
   useEffect(() => {
     if (!playerId) {
@@ -35,6 +52,7 @@ export const useGameLogic = () => {
     connectToServer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playerId]);
+
 
   // WebSocket 연결
   const connectToServer = useCallback(async () => {
@@ -117,6 +135,7 @@ export const useGameLogic = () => {
             if (message.success === false) {
               console.warn('[GameLogic] Room join failed:', message.error);
               Alert.alert('방 참가 실패', message.error || 'Room join failed');
+              rejoinAttemptedRef.current = false;
               break;
             }
             console.log('[GameLogic] Room joined, roomId:', message.data?.roomId);
@@ -126,6 +145,11 @@ export const useGameLogic = () => {
                 status: 'LOBBY',
                 settings: null,
               });
+              setSavedRoomId(message.data.roomId);
+              AsyncStorage.setItem(ROOM_ID_KEY, message.data.roomId).catch((error) =>
+                console.warn('[GameLogic] Failed to persist roomId', error),
+              );
+              rejoinAttemptedRef.current = false;
             }
             break;
 
@@ -559,6 +583,19 @@ export const useGameLogic = () => {
     [isConnected, playerId, wsClient]
   );
 
+  useEffect(() => {
+    if (!isConnected) return;
+    if (!savedRoomId) return;
+    if (!playerId) return;
+    if (!nickname) return;
+    if (roomId) return;
+    if (rejoinAttemptedRef.current) return;
+
+    rejoinAttemptedRef.current = true;
+    console.log('[GameLogic] Attempting auto rejoin to saved room:', savedRoomId);
+    joinRoom(savedRoomId, nickname);
+  }, [isConnected, savedRoomId, playerId, nickname, roomId, joinRoom]);
+
   // 게임 시작
   const startGame = useCallback(() => {
     if (!isConnected || !roomId || !playerId) return;
@@ -613,6 +650,9 @@ export const useGameLogic = () => {
     // 게임/로비 이동 시 위치 트래킹 중단
     locationService.stopWatching();
     useGameStore.getState().reset();
+    setSavedRoomId(null);
+    rejoinAttemptedRef.current = false;
+    await AsyncStorage.removeItem(ROOM_ID_KEY);
   }, [isConnected, roomId, playerId, wsClient, locationService]);
 
   const sendLocationUpdate = useCallback(
