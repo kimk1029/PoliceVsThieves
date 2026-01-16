@@ -148,6 +148,12 @@ export const useGameLogic = () => {
           case 'ROOM_JOINED':
             if (message.success === false) {
               console.warn('[GameLogic] Room join failed:', message.error);
+              // 방이 없거나 삭제된 경우 roomId 클리어
+              if (message.error === 'Room not found' || message.error?.includes('not found')) {
+                setRoomInfo({ roomId: '', status: 'LOBBY', settings: null });
+                setSavedRoomId(null);
+                AsyncStorage.removeItem(ROOM_ID_KEY).catch(() => null);
+              }
               Alert.alert('방 참가 실패', message.error || 'Room join failed');
               rejoinAttemptedRef.current = false;
               break;
