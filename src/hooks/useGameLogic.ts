@@ -1,5 +1,5 @@
 import {useState, useEffect, useCallback, useRef} from 'react';
-import {Alert} from 'react-native';
+import {Alert, AppState, AppStateStatus} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {WebSocketClient} from '../services/websocket/WebSocketClient';
 import {LocationService} from '../services/location/LocationService';
@@ -83,6 +83,20 @@ export const useGameLogic = () => {
       // 연결 성공 핸들러
       wsClient.onOpen(() => {
         console.log('[GameLogic] ✅ WebSocket connection opened!');
+        setIsConnected(true);
+        
+        // 연결 성공 시 자동 재참가 (roomId가 있으면)
+        if (roomId && nickname) {
+          console.log('[GameLogic] Auto-rejoining room after reconnection:', roomId);
+          setTimeout(() => {
+            wsClient.send({
+              type: 'room:join',
+              playerId: playerId,
+              roomId: roomId,
+              payload: { nickname },
+            });
+          }, 500);
+        }
       });
 
       // 연결 끊김 핸들러
@@ -496,6 +510,24 @@ export const useGameLogic = () => {
       setIsConnected(true);
       
       // 연결 핸들러 재등록
+      wsClient.onOpen(() => {
+        console.log('[GameLogic] ✅ WebSocket connection opened (checkConnection)!');
+        setIsConnected(true);
+        
+        // 연결 성공 시 자동 재참가 (roomId가 있으면)
+        if (roomId && nickname) {
+          console.log('[GameLogic] Auto-rejoining room after checkConnection:', roomId);
+          setTimeout(() => {
+            wsClient.send({
+              type: 'room:join',
+              playerId: playerId,
+              roomId: roomId,
+              payload: { nickname },
+            });
+          }, 500);
+        }
+      });
+      
       wsClient.onClose(() => {
         console.log('[GameLogic] Connection closed');
         setIsConnected(false);
@@ -512,7 +544,7 @@ export const useGameLogic = () => {
       setIsConnected(false);
       return false;
     }
-  }, [wsClient, playerId]);
+  }, [wsClient, playerId, roomId, nickname]);
 
   // 방 생성
   const createRoom = useCallback(
@@ -802,11 +834,71 @@ export const useGameLogic = () => {
     [isConnected, roomId, playerId, wsClient]
   );
 
+  // 앱 상태 모니터링: 포그라운드로 돌아올 때 자동 재연결
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      console.log('[GameLogic] AppState changed:', appStateRef.current, '->', nextAppState);
+      
+      // 백그라운드에서 포그라운드로 돌아올 때
+      if (
+        appStateRef.current.match(/inactive|background/) &&
+        nextAppState === 'active'
+      ) {
+        console.log('[GameLogic] App came to foreground, checking connection...');
+        
+        // 기존 재연결 타이머 취소
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+          reconnectTimeoutRef.current = null;
+        }
+        
+        // 잠시 대기 후 연결 상태 확인 및 재연결 시도
+        reconnectTimeoutRef.current = setTimeout(async () => {
+          if (!playerId) {
+            console.log('[GameLogic] No playerId, skipping reconnection');
+            return;
+          }
+          
+          const isSocketConnected = wsClient.isConnected();
+          console.log('[GameLogic] Socket connected:', isSocketConnected, 'State connected:', isConnected);
+          
+          // 연결이 끊어져 있으면 재연결 시도
+          if (!isSocketConnected || !isConnected) {
+            console.log('[GameLogic] Connection lost, attempting to reconnect...');
+            try {
+              await connectToServer();
+              console.log('[GameLogic] ✅ Reconnection successful');
+            } catch (error) {
+              console.error('[GameLogic] ❌ Reconnection failed:', error);
+            }
+          } else {
+            console.log('[GameLogic] Connection is still active');
+          }
+        }, 1000); // 1초 후 재연결 시도 (앱이 완전히 활성화될 때까지 대기)
+      }
+      
+      appStateRef.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+    };
+  }, [playerId, isConnected, wsClient, connectToServer, roomId, nickname]);
+
   // 정리
   useEffect(() => {
     return () => {
       locationService.stopWatching();
       wsClient.disconnect();
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
     };
   }, [locationService, wsClient]);
 

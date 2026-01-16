@@ -12,23 +12,30 @@ function normalizeBaseUrl(url: string): string {
 export function getApiBaseUrl(): string {
   const nativeUrl = NativeModules?.AppConfig?.API_BASE_URL;
   const raw = typeof nativeUrl === 'string' && nativeUrl.length > 0 ? nativeUrl : DEFAULT_API_BASE_URL;
-  return normalizeBaseUrl(raw);
+  const normalized = normalizeBaseUrl(raw);
+  console.log('[pntConfig] Native API_BASE_URL:', nativeUrl);
+  console.log('[pntConfig] Raw URL:', raw);
+  console.log('[pntConfig] Normalized URL:', normalized);
+  return normalized;
 }
 
 export function getWsUrl(): string {
   const base = getApiBaseUrl();
 
   // Allow passing ws/wss directly, but default to converting http(s) -> ws(s)
+  let wsUrl: string;
   if (base.startsWith('ws://') || base.startsWith('wss://')) {
-    return base;
+    wsUrl = base;
+  } else if (base.startsWith('https://')) {
+    wsUrl = base.replace(/^https:\/\//, 'wss://');
+  } else if (base.startsWith('http://')) {
+    wsUrl = base.replace(/^http:\/\//, 'ws://');
+  } else {
+    wsUrl = base;
   }
-  if (base.startsWith('https://')) {
-    return base.replace(/^https:\/\//, 'wss://');
-  }
-  if (base.startsWith('http://')) {
-    return base.replace(/^http:\/\//, 'ws://');
-  }
-  return base;
+  
+  console.log('[pntConfig] WebSocket URL:', wsUrl);
+  return wsUrl;
 }
 
 export function isStage(): boolean {
