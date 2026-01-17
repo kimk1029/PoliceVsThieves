@@ -24,6 +24,7 @@ export const useGameLogic = () => {
     activeThiefId: null,
     activeThiefNickname: null,
   });
+  const [webrtcReady, setWebrtcReady] = useState(false);
 
   const {playerId, nickname, team, updateLocation} = usePlayerStore();
   const {roomId, players, setRoomInfo, setPlayers, updatePlayer, addChatMessage} = useGameStore();
@@ -77,6 +78,7 @@ export const useGameLogic = () => {
         if (!webrtcReadyRef.current && roomId && playerId) {
           await webrtcManager.initialize(sendWebRTCSignal);
           webrtcReadyRef.current = true;
+          setWebrtcReady(true);
         }
         if (signal.type === 'offer') {
           await webrtcManager.handleOffer(fromPlayerId, signal);
@@ -126,6 +128,7 @@ export const useGameLogic = () => {
       .initialize(sendWebRTCSignal)
       .then(() => {
         webrtcReadyRef.current = true;
+        setWebrtcReady(true);
       })
       .catch((error) => {
         console.warn('[GameLogic] WebRTC 초기화 실패', error);
@@ -134,7 +137,7 @@ export const useGameLogic = () => {
 
   // 도둑끼리 WebRTC 연결
   useEffect(() => {
-    if (!webrtcReadyRef.current) return;
+    if (!webrtcReady) return;
     if (team !== 'THIEF' || !playerId) return;
 
     const thiefIds = Array.from(players.values())
@@ -146,13 +149,14 @@ export const useGameLogic = () => {
       connectedThievesRef.current.add(thiefId);
       webrtcManager.connectToThieves([thiefId]);
     });
-  }, [players, team, playerId, webrtcManager]);
+  }, [players, team, playerId, webrtcManager, webrtcReady]);
 
   // 팀 변경/방 이탈 시 WebRTC 정리
   useEffect(() => {
     if (team === 'THIEF') return;
     webrtcManager.cleanup();
     webrtcReadyRef.current = false;
+    setWebrtcReady(false);
     connectedThievesRef.current.clear();
     setActivePTT({activeThiefId: null, activeThiefNickname: null});
   }, [team, webrtcManager]);

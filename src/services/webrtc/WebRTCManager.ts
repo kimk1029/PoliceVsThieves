@@ -115,7 +115,12 @@ export class WebRTCManager {
     pc.ontrack = (event) => {
       const stream = event.streams?.[0];
       if (stream) {
+        stream.getAudioTracks().forEach((track) => {
+          track.enabled = true;
+        });
         this.remoteStreams.set(peerId, stream);
+      } else if (event.track && event.track.kind === 'audio') {
+        event.track.enabled = true;
       }
       console.log('Received remote track from', peerId);
     };

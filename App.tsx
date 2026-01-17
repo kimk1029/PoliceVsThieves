@@ -65,31 +65,17 @@ const App = (): React.JSX.Element => {
     };
   }, []);
 
-  // 앱 시작 시 카메라/마이크 권한 요청 (Android)
-  useEffect(() => {
-    (async () => {
-      if (Platform.OS !== 'android') return;
-      try {
-        await PermissionsAndroid.requestMultiple([
-          PermissionsAndroid.PERMISSIONS.CAMERA,
-          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-        ]);
-      } catch (e) {
-        console.warn('[App] Failed to request camera/mic permissions', e);
-      }
-    })();
-  }, []);
-
   // 게임 진입 시 위치 트래킹 시작(1회)
   const startedLocationRef = useRef(false);
   const [hasLocationPermission, setHasLocationPermission] = useState(false);
 
-  // 위치 권한은 "앱 시작 시" 한 번만 요청 (게임 화면 진입과 겹치면 화면/지도 렌더가 꼬일 수 있음)
+  // 앱 시작 시 모든 권한 요청 (위치 권한 우선, 그 다음 카메라/마이크)
   useEffect(() => {
     (async () => {
       try {
         if (Platform.OS === 'android') {
-          const granted = await PermissionsAndroid.request(
+          // 1. 위치 권한 (가장 중요 - 먼저 요청)
+          const locationGranted = await PermissionsAndroid.request(
             PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
             {
               title: '위치 권한',
@@ -98,14 +84,19 @@ const App = (): React.JSX.Element => {
               buttonPositive: '허용',
             },
           );
-          setHasLocationPermission(granted === PermissionsAndroid.RESULTS.GRANTED);
-          return;
-        }
+          setHasLocationPermission(locationGranted === PermissionsAndroid.RESULTS.GRANTED);
 
-        // iOS 등
-        setHasLocationPermission(true);
+          // 2. 카메라/마이크 권한 (위치 권한 후 요청)
+          await PermissionsAndroid.requestMultiple([
+            PermissionsAndroid.PERMISSIONS.CAMERA,
+            PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+          ]);
+        } else {
+          // iOS: 위치 권한은 시스템이 자동으로 처리
+          setHasLocationPermission(true);
+        }
       } catch (e) {
-        console.warn(e);
+        console.warn('[App] Failed to request permissions', e);
       }
     })();
   }, []);
