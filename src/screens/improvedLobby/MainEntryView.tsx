@@ -70,6 +70,22 @@ export const MainEntryView: React.FC<MainEntryViewProps> = ({
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.mainWrapper}
         >
+          <TouchableOpacity
+            style={[
+              styles.statusBar,
+              isConnected ? { borderColor: '#00FF00' } : { borderColor: '#FF0000' },
+            ]}
+            onPress={onPressStatus}
+          >
+            <Text
+              style={[
+                styles.statusText,
+                isConnected ? { color: '#00FF00' } : { color: '#FF0000' },
+              ]}
+            >
+              {isConnected ? '● ONLINE' : '○ OFFLINE'}
+            </Text>
+          </TouchableOpacity>
           <View style={styles.logoSection}>
             <Image
               source={require('../../assets/images/title.png')}
@@ -77,23 +93,6 @@ export const MainEntryView: React.FC<MainEntryViewProps> = ({
               resizeMode="contain"
             />
           </View>
-
-        <TouchableOpacity
-          style={[
-            styles.statusBar,
-            isConnected ? { borderColor: '#00FF00' } : { borderColor: '#FF0000' },
-          ]}
-          onPress={onPressStatus}
-        >
-          <Text
-            style={[
-              styles.statusText,
-              isConnected ? { color: '#00FF00' } : { color: '#FF0000' },
-            ]}
-          >
-            {isConnected ? '● SYSTEM ONLINE' : '○ SYSTEM OFFLINE'}
-          </Text>
-        </TouchableOpacity>
 
         {/* 1. PLAYER INFO CARD */}
         <PixelCard title="PLAYER" style={{ marginBottom: 20 }}>

@@ -5,9 +5,16 @@ import qr from 'qr.js';
 interface QRCodeViewProps {
   value: string;
   size?: number;
+  showValue?: boolean;
+  padding?: number;
 }
 
-export const QRCodeView: React.FC<QRCodeViewProps> = ({value, size = 200}) => {
+export const QRCodeView: React.FC<QRCodeViewProps> = ({
+  value,
+  size = 200,
+  showValue = true,
+  padding = 20,
+}) => {
   const modules = useMemo(() => {
     try {
       console.log('[QRCodeView] QR 코드 생성 중:', value);
@@ -23,7 +30,7 @@ export const QRCodeView: React.FC<QRCodeViewProps> = ({value, size = 200}) => {
 
   if (!modules) {
     return (
-      <View style={[styles.container, {width: size, height: size}]}>
+      <View style={[styles.container, {width: size, height: size, padding}]}>
         <Text style={styles.hintText}>QR 생성 실패</Text>
       </View>
     );
@@ -34,7 +41,7 @@ export const QRCodeView: React.FC<QRCodeViewProps> = ({value, size = 200}) => {
   const qrSize = cellSize * count;
 
   return (
-    <View style={[styles.container, {width: size, height: size}]}>
+    <View style={[styles.container, {width: size, height: size, padding}]}>
       <View style={[styles.qrWrap, {width: qrSize, height: qrSize}]}>
         {modules.map((row, r) => (
           <View key={`r-${r}`} style={styles.row}>
@@ -54,7 +61,7 @@ export const QRCodeView: React.FC<QRCodeViewProps> = ({value, size = 200}) => {
           </View>
         ))}
       </View>
-      <Text style={styles.codeText}>{value}</Text>
+      {showValue ? <Text style={styles.codeText}>{value}</Text> : null}
     </View>
   );
 };
@@ -65,7 +72,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
   },
   qrWrap: {
     backgroundColor: '#FFF',

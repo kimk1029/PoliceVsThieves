@@ -53,8 +53,10 @@ export class LocationService {
         },
         {
           enableHighAccuracy: true,
-          timeout: 15000,
-          maximumAge: 2000
+          timeout: 20000,
+          maximumAge: 2000,
+          forceRequestLocation: true,
+          showLocationDialog: true
         }
       );
     });
@@ -86,7 +88,9 @@ export class LocationService {
         // (1미터 이상 이동 시 업데이트, 부드러운 지도 추적)
         distanceFilter: 0,
         interval: intervalMs,
-        fastestInterval: intervalMs / 2
+        fastestInterval: intervalMs / 2,
+        forceRequestLocation: true,
+        showLocationDialog: true
       }
     );
   }

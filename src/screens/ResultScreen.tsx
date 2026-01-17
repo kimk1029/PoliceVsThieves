@@ -1,349 +1,345 @@
-import React from 'react';
+import React, {useMemo} from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
-  ScrollView,
   StatusBar,
+  TouchableOpacity,
+  Platform,
+  SafeAreaView,
 } from 'react-native';
-import {useGameStore} from '../store/useGameStore';
-import {usePlayerStore} from '../store/usePlayerStore';
+import {Player, GameResult, RoomSettings} from '../types/game.types';
 
-const ResultScreen = ({navigation}: any) => {
-  const {result, players: playersMap} = useGameStore();
-  const {team} = usePlayerStore();
-  
-  const players = Array.from(playersMap.values());
-  const winner = result?.winner || null;
-  const isWinner = winner === team;
+interface ResultScreenProps {
+  result: GameResult | null;
+  players: Map<string, Player>;
+  settings: RoomSettings | null;
+  gameStartAt: number | null;
+  gameEndsAt: number | null;
+  onReturnToLobby: () => void;
+}
 
-  const handleBackToLobby = () => {
-    // TODO: 게임 상태 초기화
-    navigation.navigate('Lobby');
-  };
+export const ResultScreen: React.FC<ResultScreenProps> = ({
+  result,
+  players,
+  settings,
+  gameStartAt,
+  gameEndsAt,
+  onReturnToLobby,
+}) => {
+  const winner = result?.winner ?? 'POLICE';
+  const winnerLabel = winner === 'THIEF' ? 'THIEF TEAM' : 'POLICE TEAM';
+  const reason = result?.reason;
+  const captureHistory = result?.stats?.captureHistory ?? [];
+  const playersList = Array.from(players.values());
 
-  const handlePlayAgain = () => {
-    // TODO: 새 게임 시작
-    navigation.navigate('Game');
-  };
+  // MVP 및 통계 계산
+  const {mvp, policeStats, thiefStats} = useMemo(() => {
+    const pStats = new Map<string, {nickname: string; captureCount: number}>();
+    const tStats = new Map<
+      string,
+      {nickname: string; survivalTime: number; capturedAt: number | null}
+    >();
 
-  const renderWinnerSection = () => {
-    if (winner === 'POLICE') {
-      return (
-        <View style={styles.winnerCard}>
-          <Text style={styles.winnerEmoji}>🚔</Text>
-          <Text style={styles.winnerTitle}>경찰 승리!</Text>
-          <Text style={styles.winnerText}>
-            모든 도둑을 체포했습니다!
-          </Text>
-        </View>
-      );
-    } else if (winner === 'THIEF') {
-      return (
-        <View style={styles.winnerCard}>
-          <Text style={styles.winnerEmoji}>🏃</Text>
-          <Text style={styles.winnerTitle}>도둑 승리!</Text>
-          <Text style={styles.winnerText}>
-            시간 내에 도망에 성공했습니다!
-          </Text>
-        </View>
-      );
-    } else {
-      return (
-        <View style={styles.winnerCard}>
-          <Text style={styles.winnerEmoji}>🤝</Text>
-          <Text style={styles.winnerTitle}>무승부!</Text>
-          <Text style={styles.winnerText}>
-            게임이 중단되었습니다
-          </Text>
-        </View>
-      );
+    // 경찰 검거 수 계산
+    captureHistory.forEach((record) => {
+      const current = pStats.get(record.policeId) || {
+        nickname: record.policeNickname,
+        captureCount: 0,
+      };
+      pStats.set(record.policeId, {
+        ...current,
+        captureCount: current.captureCount + 1,
+      });
+    });
+
+    // 도둑 생존 시간 계산
+    const hidingMs = (settings?.hidingSeconds ?? 0) * 1000;
+    // App.tsx에서 전달받은 gameStartAt 사용 (없으면 계산)
+    const startTime =
+      gameStartAt ?? (result ? Date.now() : 0); // result가 있을 때 기준으로 fallback
+    const endTime = gameEndsAt ?? Date.now();
+    const totalGameTime = Math.max(0, endTime - startTime);
+
+    playersList.forEach((player) => {
+      if (player.team === 'THIEF') {
+        const capturedAt = player.thiefStatus?.capturedAt;
+        const survivalTime = capturedAt
+          ? capturedAt - startTime
+          : totalGameTime; // 생존한 경우 전체 게임 시간
+        tStats.set(player.playerId, {
+          nickname: player.nickname,
+          survivalTime: Math.max(0, survivalTime),
+          capturedAt: capturedAt ?? null,
+        });
+      } else if (player.team === 'POLICE') {
+        if (!pStats.has(player.playerId)) {
+          pStats.set(player.playerId, {
+            nickname: player.nickname,
+            captureCount: 0,
+          });
+        }
+      }
+    });
+
+    // MVP 선정
+    let mvpData: {
+      playerId: string;
+      nickname: string;
+      type: 'POLICE' | 'THIEF';
+      value: number;
+    } | null = null;
+
+    // 경찰 MVP: 검거 수가 가장 많은 경찰
+    const topPolice = Array.from(pStats.entries())
+      .map(([id, stat]) => ({playerId: id, ...stat, type: 'POLICE' as const}))
+      .sort((a, b) => b.captureCount - a.captureCount)[0];
+
+    // 도둑 MVP: 생존 시간이 가장 긴 도둑
+    const topThief = Array.from(tStats.entries())
+      .map(([id, stat]) => ({
+        playerId: id,
+        nickname: stat.nickname,
+        type: 'THIEF' as const,
+        survivalTime: stat.survivalTime,
+      }))
+      .sort((a, b) => b.survivalTime - a.survivalTime)[0];
+
+    // MVP 결정: 우승 팀 중에서 성과가 가장 좋은 사람
+    if (winner === 'POLICE' && topPolice) {
+      mvpData = {...topPolice, value: topPolice.captureCount};
+    } else if (winner === 'THIEF' && topThief) {
+      mvpData = {...topThief, value: Math.floor(topThief.survivalTime / 1000)};
     }
-  };
 
-  const renderPlayerResult = () => {
-    return (
-      <View style={[styles.playerResultCard, isWinner ? styles.winCard : styles.loseCard]}>
-        <Text style={styles.playerResultTitle}>
-          {isWinner ? '🎉 승리!' : '😢 패배...'}
-        </Text>
-        <Text style={styles.playerResultText}>
-          당신은 {team === 'POLICE' ? '경찰' : '도둑'} 팀이었습니다
-        </Text>
-      </View>
-    );
-  };
+    return {mvp: mvpData, policeStats: pStats, thiefStats: tStats};
+  }, [result, playersList, captureHistory, settings, gameStartAt, gameEndsAt, winner]);
 
-  const renderStats = () => {
-    // 임시 통계 데이터
-    const stats = {
-      duration: '15:23',
-      captured: 3,
-      escaped: 2,
-      distance: '2.3km',
-    };
-
-    return (
-      <View style={styles.statsCard}>
-        <Text style={styles.statsTitle}>게임 통계</Text>
-        <View style={styles.statsGrid}>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{stats.duration}</Text>
-            <Text style={styles.statLabel}>게임 시간</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{stats.captured}</Text>
-            <Text style={styles.statLabel}>체포된 도둑</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{stats.escaped}</Text>
-            <Text style={styles.statLabel}>탈출한 도둑</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{stats.distance}</Text>
-            <Text style={styles.statLabel}>이동 거리</Text>
-          </View>
-        </View>
-      </View>
-    );
-  };
-
-  const renderPlayerList = () => {
-    const policeTeam = players.filter(p => p.team === 'POLICE');
-    const thiefTeam = players.filter(p => p.team === 'THIEF');
-
-    return (
-      <View style={styles.playersCard}>
-        <Text style={styles.cardTitle}>참가자 목록</Text>
-        
-        <View style={styles.teamSection}>
-          <Text style={styles.teamTitle}>🚔 경찰 팀 ({policeTeam.length})</Text>
-          {policeTeam.map((player, index) => (
-            <View key={index} style={[styles.playerItem, styles.policeItem]}>
-              <Text style={styles.playerName}>Player {index + 1}</Text>
-              <Text style={styles.playerStatus}>
-                {player.status === 'alive' ? '✅' : '❌'}
-              </Text>
-            </View>
-          ))}
-        </View>
-
-        <View style={styles.teamSection}>
-          <Text style={styles.teamTitle}>🏃 도둑 팀 ({thiefTeam.length})</Text>
-          {thiefTeam.map((player, index) => (
-            <View key={index} style={[styles.playerItem, styles.thiefItem]}>
-              <Text style={styles.playerName}>Player {index + 1}</Text>
-              <Text style={styles.playerStatus}>
-                {player.status === 'alive' ? '✅ 탈출' : '🔒 체포'}
-              </Text>
-            </View>
-          ))}
-        </View>
-      </View>
-    );
+  const formatTime = (ms: number) => {
+    const seconds = Math.floor(ms / 1000);
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}분 ${secs}초`;
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1a1a2e" />
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.header}>
-          <Text style={styles.title}>게임 결과</Text>
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#2D2B55" />
+      <View style={styles.resultBody}>
+        <Text style={styles.resultTitle}>GAME OVER</Text>
+
+        <View style={styles.resultCard}>
+          <Text style={styles.winnerTitle}>🏆 WINNER 🏆</Text>
+          <Text style={styles.winnerTeam}>{winnerLabel}</Text>
+          {reason ? <Text style={styles.resultReason}>{reason}</Text> : null}
         </View>
 
-        {renderWinnerSection()}
-        {renderPlayerResult()}
-        {renderStats()}
-        {renderPlayerList()}
+        {/* MVP */}
+        {mvp && (
+          <View style={styles.mvpCard}>
+            <Text style={styles.mvpTitle}>⭐ MVP ⭐</Text>
+            <Text style={styles.mvpName}>{mvp.nickname}</Text>
+            <Text style={styles.mvpValue}>
+              {mvp.type === 'POLICE'
+                ? `검거 ${mvp.value}명`
+                : `생존 ${mvp.value}초`}
+            </Text>
+          </View>
+        )}
 
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={handlePlayAgain}>
-            <Text style={styles.buttonText}>🔄 다시 하기</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.secondaryButton}
-            onPress={handleBackToLobby}>
-            <Text style={styles.buttonText}>🏠 로비로</Text>
-          </TouchableOpacity>
+        <View style={styles.statsGrid}>
+          <View style={[styles.statsCard, styles.statsCardHalf]}>
+            <Text style={styles.statsTitle}>🚔 경찰 팀</Text>
+            {Array.from(policeStats.entries())
+              .sort((a, b) => b[1].captureCount - a[1].captureCount)
+              .map(([id, stat]) => (
+                <View key={id} style={styles.statsRow}>
+                  <Text style={styles.statsName}>{stat.nickname}</Text>
+                  <Text style={styles.statsValue}>
+                    {stat.captureCount}명
+                  </Text>
+                </View>
+              ))}
+          </View>
+
+          <View style={[styles.statsCard, styles.statsCardHalf]}>
+            <Text style={styles.statsTitle}>🏃 도둑 팀</Text>
+            {Array.from(thiefStats.entries())
+              .sort((a, b) => b[1].survivalTime - a[1].survivalTime)
+              .map(([id, stat]) => (
+                <View key={id} style={styles.statsRow}>
+                  <Text style={styles.statsName}>{stat.nickname}</Text>
+                  <Text style={styles.statsValue}>
+                    {stat.capturedAt
+                      ? formatTime(stat.survivalTime)
+                      : '생존'}
+                  </Text>
+                </View>
+              ))}
+          </View>
         </View>
-      </ScrollView>
-    </View>
+
+        <TouchableOpacity style={styles.primaryButton} onPress={onReturnToLobby}>
+          <Text style={styles.buttonText}>로비로 돌아가기</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#2D2B55',
   },
-  scrollContent: {
-    padding: 20,
+  resultBody: {
+    flex: 1,
+    padding: 16,
+    justifyContent: 'space-between',
   },
-  header: {
+  resultTitle: {
+    fontSize: 34,
+    fontWeight: '900',
+    color: '#FF0055',
+    marginBottom: 12,
+    textAlign: 'center',
+    textShadowColor: '#00E5FF',
+    textShadowOffset: {width: 4, height: 4},
+    textShadowRadius: 0,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+    letterSpacing: 2,
+  },
+  resultCard: {
+    backgroundColor: '#0E102A',
+    borderWidth: 4,
+    borderColor: '#6E7BFF',
+    borderBottomWidth: 8,
+    borderRightWidth: 8,
+    padding: 16,
     alignItems: 'center',
-    marginVertical: 20,
+    width: '100%',
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: {width: 6, height: 6},
+    shadowOpacity: 1,
+    shadowRadius: 0,
   },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  winnerCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 12,
-    padding: 30,
-    alignItems: 'center',
-    marginBottom: 20,
-    borderWidth: 2,
-    borderColor: '#FFD700',
-  },
-  winnerEmoji: {
-    fontSize: 64,
-    marginBottom: 10,
+  resultReason: {
+    marginTop: 10,
+    fontSize: 12,
+    color: '#B4B8FF',
+    textAlign: 'center',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
   winnerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#FFD700',
-    marginBottom: 8,
-  },
-  winnerText: {
     fontSize: 16,
-    color: '#aaa',
-    textAlign: 'center',
+    fontWeight: 'bold',
+    color: '#FFE08A',
+    marginBottom: 10,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
-  playerResultCard: {
-    borderRadius: 12,
-    padding: 20,
-    alignItems: 'center',
-    marginBottom: 20,
-    borderWidth: 2,
-  },
-  winCard: {
-    backgroundColor: '#1B5E20',
-    borderColor: '#4CAF50',
-  },
-  loseCard: {
-    backgroundColor: '#B71C1C',
-    borderColor: '#F44336',
-  },
-  playerResultTitle: {
+  winnerTeam: {
     fontSize: 24,
+    fontWeight: '900',
+    color: '#7DE2FF',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+    textShadowColor: '#5A63FF',
+    textShadowOffset: {width: 2, height: 2},
+    textShadowRadius: 0,
+  },
+  mvpCard: {
+    backgroundColor: '#1A1636',
+    borderWidth: 4,
+    borderColor: '#FFB84D',
+    borderBottomWidth: 8,
+    borderRightWidth: 8,
+    padding: 12,
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: {width: 4, height: 4},
+    shadowOpacity: 1,
+    shadowRadius: 0,
+  },
+  mvpTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#FFB84D',
+    marginBottom: 4,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  mvpName: {
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#fff',
-    marginBottom: 8,
+    marginBottom: 2,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
-  playerResultText: {
-    fontSize: 14,
-    color: '#ddd',
-  },
-  statsCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#0f3460',
-  },
-  statsTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 16,
-    textAlign: 'center',
+  mvpValue: {
+    fontSize: 12,
+    color: '#FFE08A',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
   statsGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    gap: 10,
   },
-  statItem: {
-    width: '48%',
-    backgroundColor: '#0f3460',
-    borderRadius: 8,
-    padding: 15,
-    alignItems: 'center',
-    marginBottom: 10,
+  statsCard: {
+    backgroundColor: '#0E102A',
+    borderWidth: 2,
+    borderColor: '#6E7BFF',
+    padding: 10,
+    borderRadius: 10,
   },
-  statValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#4CAF50',
-    marginBottom: 5,
+  statsCardHalf: {
+    flex: 1,
   },
-  statLabel: {
-    fontSize: 12,
-    color: '#aaa',
+  statsTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#7DE2FF',
+    marginBottom: 8,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
-  playersCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#0f3460',
-  },
-  cardTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 16,
-  },
-  teamSection: {
-    marginBottom: 20,
-  },
-  teamTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 10,
-  },
-  playerItem: {
+  statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#222',
   },
-  policeItem: {
-    backgroundColor: '#1565C0',
-  },
-  thiefItem: {
-    backgroundColor: '#D84315',
-  },
-  playerName: {
+  statsName: {
+    fontSize: 11,
     color: '#fff',
-    fontSize: 14,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
     fontWeight: 'bold',
   },
-  playerStatus: {
-    color: '#fff',
-    fontSize: 12,
-  },
-  buttonContainer: {
-    gap: 12,
+  statsValue: {
+    fontSize: 10,
+    color: '#B4B8FF',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
   primaryButton: {
-    backgroundColor: '#4CAF50',
-    borderRadius: 8,
-    padding: 16,
+    backgroundColor: '#6E7BFF',
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    width: '100%',
+    borderWidth: 2,
+    borderColor: '#0E102A',
     alignItems: 'center',
-  },
-  secondaryButton: {
-    backgroundColor: '#2196F3',
-    borderRadius: 8,
-    padding: 16,
-    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {width: 3, height: 3},
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    borderRadius: 10,
   },
   buttonText: {
     color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '900',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
 });
-
-export default ResultScreen;

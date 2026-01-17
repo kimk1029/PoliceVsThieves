@@ -14,7 +14,11 @@ interface ImprovedLobbyScreenProps {
   gameLogic: {
     isConnected: boolean;
     createRoom: (nickname: string, settings?: any) => Promise<void> | void;
-    joinRoom: (roomCode: string, nickname: string) => Promise<void> | void;
+    joinRoom: (
+      roomCode: string,
+      nickname: string,
+      source?: 'manual' | 'scan' | 'auto'
+    ) => Promise<void> | void;
     checkConnection: () => Promise<boolean>;
     sendChatMessage: (text: string) => void;
     startGame: () => void;
@@ -22,11 +26,13 @@ interface ImprovedLobbyScreenProps {
     leaveRoom: () => Promise<void> | void;
     updateRoomSettings: (settings: any) => void;
   };
+  suppressAutoNavigate?: boolean;
 }
 
 export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
   onNavigate,
   gameLogic,
+  suppressAutoNavigate = false,
 }) => {
   const [playerName, setPlayerName] = useState('');
   const [roomCode, setRoomCode] = useState('');
@@ -74,10 +80,10 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
   }, [isConnected, showReconnectingModal]);
 
   useEffect(() => {
-    if (status && status !== 'LOBBY' && roomId) {
+    if (!suppressAutoNavigate && status && status !== 'LOBBY' && roomId) {
       onNavigate('game');
     }
-  }, [status, roomId, onNavigate]);
+  }, [status, roomId, onNavigate, suppressAutoNavigate]);
 
   // 스캐너를 다시 열 때마다 "중복 방지/처리 중" 상태를 완전히 리셋 (재스캔 안정화)
   useEffect(() => {
@@ -133,7 +139,7 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
       Alert.alert('👾 SYSTEM', 'CONNECTION FAILED');
       return;
     }
-    await joinRoom(normalizedRoomCode, trimmedPlayerName);
+    await joinRoom(normalizedRoomCode, trimmedPlayerName, 'manual');
   };
 
   const joinWithCode = async (code: string) => {
@@ -153,7 +159,7 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
     }
     await setNickname(playerName);
     setRoomCode(normalized);
-    await joinRoom(normalized, playerName);
+    await joinRoom(normalized, playerName, 'scan');
   };
 
   const extractRoomId = (text: string): string | null => {

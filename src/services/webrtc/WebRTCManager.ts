@@ -1,5 +1,12 @@
 import { RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, mediaDevices, MediaStream } from 'react-native-webrtc';
-import InCallManager from 'react-native-incall-manager';
+
+// InCallManager는 선택적 사용 (없어도 작동)
+let InCallManager: any = null;
+try {
+  InCallManager = require('react-native-incall-manager').default;
+} catch (e) {
+  console.warn('[WebRTCManager] react-native-incall-manager not available, continuing without it');
+}
 
 const RTC_CONFIGURATION = {
   iceServers: [
@@ -31,8 +38,14 @@ export class WebRTCManager {
         track.enabled = false;
       });
 
-      InCallManager.start({ media: 'audio', ringback: '' });
-      InCallManager.setForceSpeakerphoneOn(true);
+      if (InCallManager) {
+        try {
+          InCallManager.start({ media: 'audio', ringback: '' });
+          InCallManager.setForceSpeakerphoneOn(true);
+        } catch (e) {
+          console.warn('[WebRTCManager] InCallManager setup failed', e);
+        }
+      }
 
       console.log('WebRTC initialized');
     } catch (error) {
@@ -162,7 +175,13 @@ export class WebRTCManager {
       this.localStream = null;
     }
 
-    InCallManager.stop();
+    if (InCallManager) {
+      try {
+        InCallManager.stop();
+      } catch (e) {
+        console.warn('[WebRTCManager] InCallManager.stop failed', e);
+      }
+    }
     console.log('WebRTC cleanup complete');
   }
 

@@ -5,6 +5,8 @@
   "scripts": {
     "android": "react-native run-android",
     "android:stage": "cd android && ./gradlew installDebug -PPNT_STAGE=true -PPNT_API_BASE_URL=http://kimk1029.synology.me:9991",
+    "android:stage:apk": "cd android && ./gradlew assembleDebug -PPNT_STAGE=true -PPNT_API_BASE_URL=http://kimk1029.synology.me:9991",
+    "android:stage:apk:release": "cd android && ./gradlew assembleRelease -PPNT_STAGE=true -PPNT_API_BASE_URL=http://kimk1029.synology.me:9991",
     "ios": "react-native run-ios",
     "ios:stage": "react-native run-ios --scheme PoliceVsThievesStage --mode Stage",
     "ios:stage:clean": "xcrun simctl uninstall booted com.copvsrobbers 2>/dev/null || true && xcrun simctl uninstall booted com.copvsrobbers.PoliceVsThieves 2>/dev/null || true && xcrun simctl uninstall booted org.reactjs.native.example.PoliceVsThieves 2>/dev/null || true && cd ios && export LANG=en_US.UTF-8 && pod install && cd .. && react-native run-ios --scheme PoliceVsThievesStage --mode Stage",
@@ -21,8 +23,10 @@
     "react": "19.1.0",
     "react-native": "0.80.0",
     "react-native-geolocation-service": "^5.3.1",
+    "react-native-incall-manager": "^4.2.1",
     "react-native-keep-awake": "^4.0.0",
     "react-native-vision-camera": "^4.7.0",
+    "react-native-webrtc": "^124.0.7",
     "react-native-webview": "^13.10.2",
     "zustand": "^4.5.7"
   },

@@ -3,6 +3,7 @@ import {Alert, AppState, AppStateStatus} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {WebSocketClient} from '../services/websocket/WebSocketClient';
 import {LocationService} from '../services/location/LocationService';
+import {WebRTCManager} from '../services/webrtc/WebRTCManager';
 import {useGameStore} from '../store/useGameStore';
 import {usePlayerStore} from '../store/usePlayerStore';
 import {Location} from '../types/game.types';
@@ -16,18 +17,80 @@ const ROOM_ID_KEY = '@police_vs_thieves_room_id';
 export const useGameLogic = () => {
   const [wsClient] = useState(() => new WebSocketClient());
   const [locationService] = useState(() => new LocationService());
+  const [webrtcManager] = useState(() => new WebRTCManager());
   const [isConnected, setIsConnected] = useState(false);
   const [myLocation, setMyLocation] = useState<Location | null>(null);
+  const [activePTT, setActivePTT] = useState<{activeThiefId: string | null; activeThiefNickname: string | null}>({
+    activeThiefId: null,
+    activeThiefNickname: null,
+  });
 
   const {playerId, nickname, team, updateLocation} = usePlayerStore();
   const {roomId, players, setRoomInfo, setPlayers, updatePlayer, addChatMessage} = useGameStore();
 
   // 위치 업데이트 스로틀링 (깜빡임 방지)
   const locationUpdateTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
-  const lastLocationUpdate = useRef<Map<string, { lat: number; lng: number; timestamp: number }>>(new Map());
+  const lastLocationUpdate = useRef<
+    Map<string, { lat: number; lng: number; timestamp: number; accuracy?: number }>
+  >(new Map());
 
   const [savedRoomId, setSavedRoomId] = useState<string | null>(null);
   const rejoinAttemptedRef = useRef(false);
+  const lastJoinSourceRef = useRef<'manual' | 'scan' | 'auto' | null>(null);
+  const webrtcReadyRef = useRef(false);
+  const connectedThievesRef = useRef<Set<string>>(new Set());
+  const ignoreRoomMessagesRef = useRef(false);
+
+  const isValidLocation = (location: Location | null | undefined) => {
+    if (!location) return false;
+    return (
+      typeof location.lat === 'number' &&
+      typeof location.lng === 'number' &&
+      !isNaN(location.lat) &&
+      !isNaN(location.lng) &&
+      isFinite(location.lat) &&
+      isFinite(location.lng)
+    );
+  };
+
+  const sendWebRTCSignal = useCallback(
+    (targetId: string | 'broadcast', signal: any) => {
+      if (!roomId || !playerId) return;
+      wsClient.send({
+        type: 'webrtc:signal',
+        playerId,
+        roomId,
+        payload: {
+          targetId,
+          signal,
+        },
+      });
+    },
+    [roomId, playerId, wsClient],
+  );
+
+  const handleWebRTCSignal = useCallback(
+    async (fromPlayerId: string, signal: any) => {
+      if (!signal || !fromPlayerId) return;
+      if (team !== 'THIEF') return;
+      try {
+        if (!webrtcReadyRef.current && roomId && playerId) {
+          await webrtcManager.initialize(sendWebRTCSignal);
+          webrtcReadyRef.current = true;
+        }
+        if (signal.type === 'offer') {
+          await webrtcManager.handleOffer(fromPlayerId, signal);
+        } else if (signal.type === 'answer') {
+          await webrtcManager.handleAnswer(fromPlayerId, signal);
+        } else if (signal.type === 'ice') {
+          await webrtcManager.handleIceCandidate(fromPlayerId, signal.candidate);
+        }
+      } catch (e) {
+        console.warn('[GameLogic] WebRTC signal 처리 실패', e);
+      }
+    },
+    [playerId, roomId, sendWebRTCSignal, team, webrtcManager],
+  );
 
   useEffect(() => {
     AsyncStorage.getItem(ROOM_ID_KEY)
@@ -52,6 +115,47 @@ export const useGameLogic = () => {
     connectToServer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playerId]);
+
+  // 도둑 팀 WebRTC 초기화
+  useEffect(() => {
+    if (!isConnected || !roomId || !playerId) return;
+    if (team !== 'THIEF') return;
+    if (webrtcReadyRef.current) return;
+
+    webrtcManager
+      .initialize(sendWebRTCSignal)
+      .then(() => {
+        webrtcReadyRef.current = true;
+      })
+      .catch((error) => {
+        console.warn('[GameLogic] WebRTC 초기화 실패', error);
+      });
+  }, [isConnected, roomId, playerId, team, sendWebRTCSignal, webrtcManager]);
+
+  // 도둑끼리 WebRTC 연결
+  useEffect(() => {
+    if (!webrtcReadyRef.current) return;
+    if (team !== 'THIEF' || !playerId) return;
+
+    const thiefIds = Array.from(players.values())
+      .filter((p: any) => p.team === 'THIEF' && p.playerId !== playerId)
+      .map((p: any) => p.playerId);
+
+    thiefIds.forEach((thiefId) => {
+      if (connectedThievesRef.current.has(thiefId)) return;
+      connectedThievesRef.current.add(thiefId);
+      webrtcManager.connectToThieves([thiefId]);
+    });
+  }, [players, team, playerId, webrtcManager]);
+
+  // 팀 변경/방 이탈 시 WebRTC 정리
+  useEffect(() => {
+    if (team === 'THIEF') return;
+    webrtcManager.cleanup();
+    webrtcReadyRef.current = false;
+    connectedThievesRef.current.clear();
+    setActivePTT({activeThiefId: null, activeThiefNickname: null});
+  }, [team, webrtcManager]);
 
 
   // WebSocket 연결
@@ -135,6 +239,7 @@ export const useGameLogic = () => {
           case 'room:created':
           case 'ROOM_CREATED':
             console.log('[GameLogic] Room created, roomId:', message.data?.roomId);
+            ignoreRoomMessagesRef.current = false;
             if (message.data?.roomId) {
               setRoomInfo({
                 roomId: message.data.roomId,
@@ -145,7 +250,9 @@ export const useGameLogic = () => {
             break;
 
           case 'room:join':
-          case 'ROOM_JOINED':
+          case 'ROOM_JOINED': {
+            const joinSource = lastJoinSourceRef.current;
+            const isUserInitiated = joinSource === 'manual' || joinSource === 'scan';
             if (message.success === false) {
               console.warn('[GameLogic] Room join failed:', message.error);
               // 방이 없거나 삭제된 경우 roomId 클리어
@@ -154,11 +261,15 @@ export const useGameLogic = () => {
                 setSavedRoomId(null);
                 AsyncStorage.removeItem(ROOM_ID_KEY).catch(() => null);
               }
-              Alert.alert('방 참가 실패', message.error || 'Room join failed');
+              if (isUserInitiated) {
+                Alert.alert('방 참가 실패', message.error || 'Room join failed');
+              }
               rejoinAttemptedRef.current = false;
+              lastJoinSourceRef.current = null;
               break;
             }
             console.log('[GameLogic] Room joined, roomId:', message.data?.roomId);
+            ignoreRoomMessagesRef.current = false;
             if (message.data?.roomId) {
               setRoomInfo({
                 roomId: message.data.roomId,
@@ -170,10 +281,16 @@ export const useGameLogic = () => {
                 console.warn('[GameLogic] Failed to persist roomId', error),
               );
               rejoinAttemptedRef.current = false;
+              lastJoinSourceRef.current = null;
             }
             break;
+          }
 
           case 'game:state':
+            if (ignoreRoomMessagesRef.current) {
+              console.log('[GameLogic] Ignoring game:state after leave');
+              break;
+            }
             console.log('[GameLogic] 📥 Game state received!');
             console.log('[GameLogic] Message data:', JSON.stringify(message.data, null, 2));
             console.log('[GameLogic] Players in message:', message.data?.players);
@@ -215,10 +332,17 @@ export const useGameLogic = () => {
             break;
 
           case 'location:update': {
+            if (ignoreRoomMessagesRef.current) {
+              break;
+            }
             try {
               const data = message.data;
               if (!data?.playerId || !data?.location) {
                 logLocation('RX location:update invalid payload', message.data);
+                break;
+              }
+              if (!isValidLocation(data.location)) {
+                logLocation('RX location:update invalid coords', data.location);
                 break;
               }
 
@@ -226,14 +350,21 @@ export const useGameLogic = () => {
               const newLocation = data.location;
               const lastUpdate = lastLocationUpdate.current.get(playerId);
 
-              // 최소 거리 체크 (5m 이상 이동했을 때만 업데이트) - 깜빡임 방지
-              const MIN_DISTANCE_METERS = 5;
+              // 최소 거리 체크 (1m 이상 이동했을 때만 즉시 업데이트)
+              const MIN_DISTANCE_METERS = 1;
+              const MIN_UPDATE_MS = 700;
               if (lastUpdate) {
                 const distance = Math.sqrt(
                   Math.pow((newLocation.lat - lastUpdate.lat) * 111000, 2) +
                   Math.pow((newLocation.lng - lastUpdate.lng) * 111000, 2)
                 );
-                if (distance < MIN_DISTANCE_METERS) {
+                const timeDiff = Date.now() - lastUpdate.timestamp;
+                const accuracyImproved =
+                  typeof newLocation.accuracy === 'number' &&
+                  typeof lastUpdate.accuracy === 'number' &&
+                  newLocation.accuracy + 2 < lastUpdate.accuracy;
+
+                if (distance < MIN_DISTANCE_METERS && timeDiff < MIN_UPDATE_MS && !accuracyImproved) {
                   // 거리가 너무 가까우면 스로틀링 (최대 1초에 1번)
                   const existingTimer = locationUpdateTimers.current.get(playerId);
                   if (existingTimer) {
@@ -246,6 +377,7 @@ export const useGameLogic = () => {
                         lat: newLocation.lat,
                         lng: newLocation.lng,
                         timestamp: Date.now(),
+                        accuracy: newLocation.accuracy,
                       });
                       updatePlayer(playerId, {
                         location: newLocation,
@@ -263,6 +395,7 @@ export const useGameLogic = () => {
                 lat: newLocation.lat,
                 lng: newLocation.lng,
                 timestamp: Date.now(),
+                accuracy: newLocation.accuracy,
               });
 
               logLocation('RX location:update', {
@@ -428,6 +561,10 @@ export const useGameLogic = () => {
             break;
 
           case 'GAME_ENDED':
+            if (ignoreRoomMessagesRef.current) {
+              console.log('[GameLogic] Ignoring GAME_ENDED after leave');
+              break;
+            }
             setRoomInfo({
               status: 'END',
               result: message.payload?.result || message.data?.result,
@@ -435,10 +572,42 @@ export const useGameLogic = () => {
             break;
 
           case 'game:end':
+            if (ignoreRoomMessagesRef.current) {
+              console.log('[GameLogic] Ignoring game:end after leave');
+              break;
+            }
             if (message.data) {
               setRoomInfo({status: 'END', result: message.data});
+              // 게임 종료 시 세션 정리
+              locationService.stopWatching();
+              webrtcManager.cleanup();
+              webrtcReadyRef.current = false;
+              connectedThievesRef.current.clear();
+              setActivePTT({activeThiefId: null, activeThiefNickname: null});
+              console.log('[GameLogic] Game ended, session cleaned up');
             }
             break;
+
+          case 'webrtc:signal': {
+            const fromPlayerId = message.playerId || message.data?.playerId;
+            const signal = message.data?.signal || message.payload?.signal;
+            if (fromPlayerId && signal) {
+              handleWebRTCSignal(fromPlayerId, signal);
+            }
+            break;
+          }
+
+          case 'ptt:status': {
+            const activeThiefId = message.data?.activeThiefId ?? null;
+            const activeThiefNickname = message.data?.activeThiefNickname ?? null;
+            setActivePTT({activeThiefId, activeThiefNickname});
+            if (activeThiefId && activeThiefId === playerId) {
+              webrtcManager.startTransmitting();
+            } else {
+              webrtcManager.stopTransmitting();
+            }
+            break;
+          }
 
           default:
             // 알 수 없는 메시지 타입은 무시
@@ -556,6 +725,7 @@ export const useGameLogic = () => {
   const createRoom = useCallback(
     async (playerNickname: string, settings?: any) => {
       console.log('[GameLogic] createRoom called');
+      ignoreRoomMessagesRef.current = false;
       console.log('[GameLogic] isConnected(state):', isConnected);
       console.log('[GameLogic] isConnected(socket):', wsClient.isConnected());
       console.log('[GameLogic] playerId:', playerId);
@@ -594,8 +764,13 @@ export const useGameLogic = () => {
 
   // 방 참가
   const joinRoom = useCallback(
-    async (roomCode: string, playerNickname: string) => {
+    async (
+      roomCode: string,
+      playerNickname: string,
+      source: 'manual' | 'scan' | 'auto' = 'manual',
+    ) => {
       console.log('[GameLogic] joinRoom called');
+      ignoreRoomMessagesRef.current = false;
       console.log('[GameLogic] roomCode:', roomCode);
       console.log('[GameLogic] isConnected(state):', isConnected);
       console.log('[GameLogic] isConnected(socket):', wsClient.isConnected());
@@ -605,6 +780,7 @@ export const useGameLogic = () => {
         console.log('[GameLogic] Cannot join room: missing requirements');
         return;
       }
+      lastJoinSourceRef.current = source;
 
       const message = {
         type: 'room:join',
@@ -631,7 +807,7 @@ export const useGameLogic = () => {
 
     rejoinAttemptedRef.current = true;
     console.log('[GameLogic] Attempting auto rejoin to saved room:', savedRoomId);
-    joinRoom(savedRoomId, nickname);
+    joinRoom(savedRoomId, nickname, 'auto');
   }, [isConnected, savedRoomId, playerId, nickname, roomId, joinRoom]);
 
   // 게임 시작
@@ -672,6 +848,7 @@ export const useGameLogic = () => {
 
   // 방 나가기
   const leaveRoom = useCallback(async () => {
+    ignoreRoomMessagesRef.current = true;
     // 중요: "로비로 나가기"는 연결을 끊는 게 아니라, 방만 나가고 연결은 유지해야
     // 바로 다시 방 생성/참가가 가능합니다.
     if (isConnected && roomId && playerId) {
@@ -687,11 +864,15 @@ export const useGameLogic = () => {
 
     // 게임/로비 이동 시 위치 트래킹 중단
     locationService.stopWatching();
+    webrtcManager.cleanup();
+    webrtcReadyRef.current = false;
+    connectedThievesRef.current.clear();
+    setActivePTT({activeThiefId: null, activeThiefNickname: null});
     useGameStore.getState().reset();
     setSavedRoomId(null);
     rejoinAttemptedRef.current = false;
     await AsyncStorage.removeItem(ROOM_ID_KEY);
-  }, [isConnected, roomId, playerId, wsClient, locationService]);
+  }, [isConnected, roomId, playerId, wsClient, locationService, webrtcManager]);
 
   const sendLocationUpdate = useCallback(
     (location: Location) => {
@@ -748,12 +929,67 @@ export const useGameLogic = () => {
     [wsClient]
   );
 
+  const applyMyLocation = useCallback(
+    (location: Location) => {
+      if (!isValidLocation(location)) return;
+      setMyLocation(location);
+      updateLocation(location);
+      sendLocationUpdate(location);
+    },
+    [isValidLocation, updateLocation, sendLocationUpdate]
+  );
+
+  const shouldProcessMyLocation = useCallback(
+    (location: Location) => {
+      if (!isValidLocation(location)) return false;
+      const key = '__me__';
+      const lastUpdate = lastLocationUpdate.current.get(key);
+      const now = Date.now();
+
+      if (!lastUpdate) {
+        lastLocationUpdate.current.set(key, {
+          lat: location.lat,
+          lng: location.lng,
+          timestamp: now,
+          accuracy: location.accuracy,
+        });
+        return true;
+      }
+
+      const distance = Math.sqrt(
+        Math.pow((location.lat - lastUpdate.lat) * 111000, 2) +
+        Math.pow((location.lng - lastUpdate.lng) * 111000, 2)
+      );
+      const timeDiff = now - lastUpdate.timestamp;
+      const accuracyImproved =
+        typeof location.accuracy === 'number' &&
+        typeof lastUpdate.accuracy === 'number' &&
+        location.accuracy + 2 < lastUpdate.accuracy;
+
+      if (distance < 1 && timeDiff < 700 && !accuracyImproved) {
+        return false;
+      }
+
+      lastLocationUpdate.current.set(key, {
+        lat: location.lat,
+        lng: location.lng,
+        timestamp: now,
+        accuracy: location.accuracy,
+      });
+      return true;
+    },
+    [isValidLocation]
+  );
+
   // 위치 업데이트
   const startLocationTracking = useCallback(async () => {
     // 권한은 앱 시작 시 이미 요청/승인됨. 여기서는 체크만 합니다.
-    const hasPermission = await locationService.checkPermission();
+    let hasPermission = await locationService.checkPermission();
     if (!hasPermission) {
-      Alert.alert('위치 권한 필요', 'Location permission is required!');
+      hasPermission = await locationService.requestPermission();
+    }
+    if (!hasPermission) {
+      Alert.alert('위치 권한 필요', '설정에서 위치 권한을 허용해주세요.');
       return;
     }
 
@@ -761,24 +997,30 @@ export const useGameLogic = () => {
     try {
       const location = await locationService.getCurrentLocation();
       console.log('[GameLogic] 📍 Initial location:', location);
-      setMyLocation(location);
-      updateLocation(location);
-
-      // 서버에 위치 전송
-      sendLocationUpdate(location);
-    } catch (error) {
+      if (isValidLocation(location)) {
+        applyMyLocation(location);
+      }
+    } catch (error: any) {
       console.error('Failed to get location:', error);
+      const code = error?.code;
+      if (code === 1) {
+        Alert.alert('위치 권한 필요', '위치 권한을 허용해주세요.');
+      } else if (code === 2) {
+        Alert.alert('위치 서비스 꺼짐', 'GPS/위치 서비스를 켜주세요.');
+      } else if (code === 3) {
+        Alert.alert('위치 시간 초과', '위치 확인이 지연됩니다. 잠시 후 다시 시도해주세요.');
+      }
     }
 
     // 위치 추적 시작 (1초마다)
     locationService.startWatching(1000, location => {
       console.log('[GameLogic] 📍 Location update:', location);
-      setMyLocation(location);
-      updateLocation(location);
-
-      sendLocationUpdate(location);
+      if (!shouldProcessMyLocation(location)) {
+        return;
+      }
+      applyMyLocation(location);
     });
-  }, [locationService, sendLocationUpdate, updateLocation]);
+  }, [isValidLocation, locationService, applyMyLocation, shouldProcessMyLocation]);
 
   // 체포 시도
   const attemptCapture = useCallback(
@@ -813,6 +1055,26 @@ export const useGameLogic = () => {
     },
     [isConnected, roomId, playerId, team, wsClient]
   );
+
+  const requestPTT = useCallback(() => {
+    if (!isConnected || !roomId || team !== 'THIEF' || !playerId) return;
+    wsClient.send({
+      type: 'ptt:request',
+      playerId,
+      roomId,
+      payload: {},
+    });
+  }, [isConnected, roomId, playerId, team, wsClient]);
+
+  const releasePTT = useCallback(() => {
+    if (!isConnected || !roomId || team !== 'THIEF' || !playerId) return;
+    wsClient.send({
+      type: 'ptt:release',
+      playerId,
+      roomId,
+      payload: {},
+    });
+  }, [isConnected, roomId, playerId, team, wsClient]);
 
   // 채팅 메시지 전송
   const sendChatMessage = useCallback(
@@ -902,11 +1164,14 @@ export const useGameLogic = () => {
     return () => {
       locationService.stopWatching();
       wsClient.disconnect();
+      webrtcManager.cleanup();
+      webrtcReadyRef.current = false;
+      connectedThievesRef.current.clear();
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
     };
-  }, [locationService, wsClient]);
+  }, [locationService, wsClient, webrtcManager]);
 
   return {
     isConnected,
@@ -921,7 +1186,11 @@ export const useGameLogic = () => {
     startLocationTracking,
     attemptCapture,
     attemptRelease,
+    requestPTT,
+    releasePTT,
+    activePTT,
     checkConnection,
     sendChatMessage,
+    applyMyLocation,
   };
 };

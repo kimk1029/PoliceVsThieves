@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  KeyboardAvoidingView,
   Modal,
   SafeAreaView,
   ScrollView,
@@ -8,6 +9,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Platform,
 } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
 
@@ -104,9 +106,12 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
         </View>
       </View>
 
-      <View style={styles.mainContent}>
+      <KeyboardAvoidingView
+        style={styles.mainContent}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         {/* Players */}
-        <View style={[styles.panelBox, {flex: 2}]}>
+        <View style={[styles.panelBox, styles.playersPanel]}>
           <View style={styles.panelTitleBox}>
             <Text style={styles.panelTitle}>PLAYERS [{playersList.length}/20]</Text>
           </View>
@@ -140,7 +145,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
         </View>
 
         {/* Chat */}
-        <View style={[styles.panelBox, {flex: 1, marginTop: 10}]}>
+        <View style={[styles.panelBox, styles.chatPanel]}>
           <View style={[styles.panelTitleBox, {backgroundColor: '#000'}]}>
             <Text style={[styles.panelTitle, {color: '#00FF00', fontSize: 12}]}>SYSTEM_LOG</Text>
           </View>
@@ -190,7 +195,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
 
       {/* Footer */}
       <View style={styles.footerBar}>

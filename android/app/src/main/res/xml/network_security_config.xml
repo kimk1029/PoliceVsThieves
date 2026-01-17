@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Stage/Release 모드: HTTP 트래픽 허용 (Stage 서버 연결용) -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">10.0.2.2</domain>
+        <domain includeSubdomains="true">kimk1029.synology.me</domain>
+    </domain-config>
+    <!-- Stage 환경에서 HTTP 허용 -->
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

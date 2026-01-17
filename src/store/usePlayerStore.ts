@@ -26,6 +26,10 @@ interface PlayerStore {
 const PLAYER_ID_KEY = '@police_vs_thieves_player_id';
 const NICKNAME_KEY = '@police_vs_thieves_nickname';
 
+const MIN_LOCATION_DELTA = 0.00001; // ~1m
+const MIN_LOCATION_UPDATE_MS = 700;
+const ACCURACY_IMPROVEMENT_METERS = 2;
+
 export const usePlayerStore = create<PlayerStore>((set) => ({
   playerId: null,
   nickname: null,
@@ -62,7 +66,33 @@ export const usePlayerStore = create<PlayerStore>((set) => ({
   setRole: (role) => set({ role }),
   setTeam: (team) => set({ team }),
   setReady: (ready) => set({ ready }),
-  updateLocation: (loc) => set({ location: loc }),
+  updateLocation: (loc) =>
+    set((state) => {
+      if (!loc) return {};
+      const next = { ...loc, updatedAt: loc.updatedAt ?? Date.now() };
+      const prev = state.location;
+
+      if (!prev) {
+        return { location: next };
+      }
+
+      const latDiff = Math.abs(next.lat - prev.lat);
+      const lngDiff = Math.abs(next.lng - prev.lng);
+      const timeDiff = (next.updatedAt ?? 0) - (prev.updatedAt ?? 0);
+      const accuracyImproved =
+        typeof next.accuracy === 'number' &&
+        typeof prev.accuracy === 'number' &&
+        next.accuracy + ACCURACY_IMPROVEMENT_METERS < prev.accuracy;
+
+      const isSmallMove = latDiff < MIN_LOCATION_DELTA && lngDiff < MIN_LOCATION_DELTA;
+      const isTooSoon = timeDiff > 0 && timeDiff < MIN_LOCATION_UPDATE_MS;
+
+      if (isSmallMove && isTooSoon && !accuracyImproved) {
+        return {};
+      }
+
+      return { location: next };
+    }),
   setThiefStatus: (status) => set({ thiefStatus: status }),
 
   loadNickname: async () => {
