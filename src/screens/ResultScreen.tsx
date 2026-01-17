@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   Platform,
   SafeAreaView,
-  ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import { Player, GameResult, RoomSettings } from '../types/game.types';
 
@@ -135,136 +135,144 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
   // =================================================================
   // [디자인 변경] 렌더링 부분 UI/UX 개선
   // =================================================================
+  const { height, width } = useWindowDimensions();
+  const scale = Math.min(1, height / 820);
+  const scaledWidth = Math.min(width, width / scale);
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#120429" />
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}>
-
-        {/* Header Title */}
-        <Text style={styles.mainTitle}>GAME OVER</Text>
-
-        {/* 1. Winner Banner Section */}
+      <View style={styles.resultBody}>
         <View
           style={[
-            styles.pixelContainer,
-            styles.winnerBanner,
-            { borderColor: winnerThemeColor },
+            styles.resultContent,
+            { transform: [{ scale }], width: scaledWidth },
           ]}>
-          <Text
-            style={[
-              styles.winnerTeamText,
-              { color: winnerThemeColor, textShadowColor: winnerThemeColor },
-            ]}>
-            {winnerLabel}
-          </Text>
-          {reason ? <Text style={styles.resultReason}>"{reason}"</Text> : null}
-        </View>
 
-        {/* 2. MVP Hero Section (가장 돋보이게 배치) */}
-        {mvp && (
-          <View style={[styles.pixelContainer, styles.mvpContainer]}>
-            <View style={styles.mvpHeaderBadge}>
-              <Text style={styles.mvpHeaderLabel}>⭐ MOST VALUABLE PLAYER ⭐</Text>
-            </View>
-            <Text style={styles.mvpNickname}>{mvp.nickname}</Text>
+          {/* Header Title */}
+          <Text style={styles.mainTitle}>GAME OVER</Text>
+
+          {/* 1. Winner Banner Section */}
+          <View
+            style={[
+              styles.pixelContainer,
+              styles.winnerBanner,
+              { borderColor: winnerThemeColor },
+            ]}>
             <Text
               style={[
-                styles.mvpStatValue,
-                {
-                  color:
-                    mvp.type === 'POLICE' ? '#00E5FF' : '#FF0055',
-                },
+                styles.winnerTeamText,
+                { color: winnerThemeColor, textShadowColor: winnerThemeColor },
               ]}>
-              {mvp.type === 'POLICE'
-                ? `총 ${mvp.value}명 검거`
-                : `총 ${mvp.value}초 생존`}
+              {winnerLabel}
             </Text>
-          </View>
-        )}
-
-        {/* 3. Team Stats Scoreboards (오락실 랭킹 화면처럼 넓게 배치) */}
-        <View style={styles.statsSection}>
-
-          {/* 경찰 팀 스코어보드 */}
-          <View
-            style={[
-              styles.pixelContainer,
-              styles.scoreboardContainer,
-              { borderColor: '#00E5FF' },
-            ]}>
-            <Text style={[styles.scoreboardTitle, { color: '#00E5FF' }]}>
-              👮‍♂️ POLICE SQUAD
-            </Text>
-            {Array.from(policeStats.entries())
-              .sort((a, b) => b[1].captureCount - a[1].captureCount)
-              .map(([id, stat], index) => (
-                <View
-                  key={id}
-                  style={[
-                    styles.scoreRow,
-                    index % 2 === 0 ? styles.scoreRowAlt : null, // 줄무늬 효과
-                  ]}>
-                  <Text style={styles.scoreName}>{stat.nickname}</Text>
-                  <Text style={[styles.scoreValue, { color: '#00E5FF' }]}>
-                    {stat.captureCount} KILL
-                  </Text>
-                </View>
-              ))}
+            {reason ? <Text style={styles.resultReason}>"{reason}"</Text> : null}
           </View>
 
-          {/* 도둑 팀 스코어보드 */}
-          <View
-            style={[
-              styles.pixelContainer,
-              styles.scoreboardContainer,
-              { borderColor: '#FF0055', marginTop: 20 },
-            ]}>
-            <Text style={[styles.scoreboardTitle, { color: '#FF0055' }]}>
-              🏃 THIEF GANG
-            </Text>
-            {Array.from(thiefStats.entries())
-              .sort((a, b) => b[1].survivalTime - a[1].survivalTime)
-              .map(([id, stat], index) => (
-                <View
-                  key={id}
-                  style={[
-                    styles.scoreRow,
-                    index % 2 === 0 ? styles.scoreRowAlt : null,
-                  ]}>
-                  <Text
+          {/* 2. MVP Hero Section (가장 돋보이게 배치) */}
+          {mvp && (
+            <View style={[styles.pixelContainer, styles.mvpContainer]}>
+              <View style={styles.mvpHeaderBadge}>
+                <Text style={styles.mvpHeaderLabel}>⭐ MOST VALUABLE PLAYER ⭐</Text>
+              </View>
+              <Text style={styles.mvpNickname}>{mvp.nickname}</Text>
+              <Text
+                style={[
+                  styles.mvpStatValue,
+                  {
+                    color:
+                      mvp.type === 'POLICE' ? '#00E5FF' : '#FF0055',
+                  },
+                ]}>
+                {mvp.type === 'POLICE'
+                  ? `총 ${mvp.value}명 검거`
+                  : `총 ${mvp.value}초 생존`}
+              </Text>
+            </View>
+          )}
+
+          {/* 3. Team Stats Scoreboards (오락실 랭킹 화면처럼 넓게 배치) */}
+          <View style={styles.statsSection}>
+
+            {/* 경찰 팀 스코어보드 */}
+            <View
+              style={[
+                styles.pixelContainer,
+                styles.scoreboardContainer,
+                { borderColor: '#00E5FF' },
+              ]}>
+              <Text style={[styles.scoreboardTitle, { color: '#00E5FF' }]}>
+                👮‍♂️ POLICE SQUAD
+              </Text>
+              {Array.from(policeStats.entries())
+                .sort((a, b) => b[1].captureCount - a[1].captureCount)
+                .map(([id, stat], index) => (
+                  <View
+                    key={id}
                     style={[
-                      styles.scoreName,
-                      stat.capturedAt != null ? styles.capturedName : null, // 잡힌 사람은 취소선
+                      styles.scoreRow,
+                      index % 2 === 0 ? styles.scoreRowAlt : null, // 줄무늬 효과
                     ]}>
-                    {stat.nickname}
-                  </Text>
-                  <Text
+                    <Text style={styles.scoreName}>{stat.nickname}</Text>
+                    <Text style={[styles.scoreValue, { color: '#00E5FF' }]}>
+                      {stat.captureCount} KILL
+                    </Text>
+                  </View>
+                ))}
+            </View>
+
+            {/* 도둑 팀 스코어보드 */}
+            <View
+              style={[
+                styles.pixelContainer,
+                styles.scoreboardContainer,
+                { borderColor: '#FF0055', marginTop: 20 },
+              ]}>
+              <Text style={[styles.scoreboardTitle, { color: '#FF0055' }]}>
+                🏃 THIEF GANG
+              </Text>
+              {Array.from(thiefStats.entries())
+                .sort((a, b) => b[1].survivalTime - a[1].survivalTime)
+                .map(([id, stat], index) => (
+                  <View
+                    key={id}
                     style={[
-                      styles.scoreValue,
-                      { color: stat.capturedAt ? '#666' : '#FF0055' },
+                      styles.scoreRow,
+                      index % 2 === 0 ? styles.scoreRowAlt : null,
                     ]}>
-                    {stat.capturedAt
-                      ? formatTime(stat.survivalTime)
-                      : 'SURVIVED!'}
-                  </Text>
-                </View>
-              ))}
+                    <Text
+                      style={[
+                        styles.scoreName,
+                        stat.capturedAt != null ? styles.capturedName : null, // 잡힌 사람은 취소선
+                      ]}>
+                      {stat.nickname}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.scoreValue,
+                        { color: stat.capturedAt ? '#666' : '#FF0055' },
+                      ]}>
+                      {stat.capturedAt
+                        ? formatTime(stat.survivalTime)
+                        : 'SURVIVED!'}
+                    </Text>
+                  </View>
+                ))}
+            </View>
           </View>
+
+          {/* 4. Return Button (두껍고 누르고 싶은 아케이드 버튼 스타일) */}
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={onReturnToLobby}
+            style={styles.returnButtonWrapper}>
+            <View style={styles.returnButtonShadow} />
+            <View style={styles.returnButtonFront}>
+              <Text style={styles.buttonText}>RETURN TO LOBBY ▶</Text>
+            </View>
+          </TouchableOpacity>
         </View>
-
-        {/* 4. Return Button (두껍고 누르고 싶은 아케이드 버튼 스타일) */}
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={onReturnToLobby}
-          style={styles.returnButtonWrapper}>
-          <View style={styles.returnButtonShadow} />
-          <View style={styles.returnButtonFront}>
-            <Text style={styles.buttonText}>RETURN TO LOBBY ▶</Text>
-          </View>
-        </TouchableOpacity>
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 };
@@ -280,13 +288,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#120429', // 더 깊은 밤하늘색 배경
   },
-  scrollView: {
+  resultBody: {
     flex: 1,
-  },
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
     alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  resultContent: {
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   mainTitle: {
     fontSize: 40,

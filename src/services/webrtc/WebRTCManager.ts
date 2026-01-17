@@ -1,4 +1,5 @@
 import { RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, mediaDevices, MediaStream } from 'react-native-webrtc';
+import { Platform, PermissionsAndroid } from 'react-native';
 
 // InCallManager는 선택적 사용 (없어도 작동)
 let InCallManager: any = null;
@@ -20,11 +21,45 @@ type SignalSender = (targetId: string | 'broadcast', signal: any) => void;
 export class WebRTCManager {
   private peers: Map<string, RTCPeerConnection> = new Map();
   private localStream: MediaStream | null = null;
+  private remoteStreams: Map<string, MediaStream> = new Map();
   private sendSignal: SignalSender | null = null;
   private isTransmitting = false;
 
+  private attachLocalStreamToPeer(peerId: string, pc: RTCPeerConnection): void {
+    if (!this.localStream) return;
+    // 이미 트랙이 붙어있는지 확인
+    const existingTrackIds = pc.getSenders().map(sender => sender.track?.id).filter(Boolean);
+    this.localStream.getTracks().forEach((track) => {
+      if (!existingTrackIds.includes(track.id)) {
+        pc.addTrack(track, this.localStream!);
+      }
+    });
+  }
+
   async initialize(sendSignal: SignalSender): Promise<void> {
     this.sendSignal = sendSignal;
+
+    // Android에서 마이크 권한 요청
+    if (Platform.OS === 'android') {
+      try {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+          {
+            title: '마이크 권한',
+            message: '도둑 팀 무전을 위해 마이크 권한이 필요합니다.',
+            buttonNeutral: '나중에',
+            buttonNegative: '취소',
+            buttonPositive: '허용',
+          }
+        );
+        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+          throw new Error('마이크 권한이 거부되었습니다');
+        }
+      } catch (err) {
+        console.error('[WebRTCManager] 마이크 권한 요청 실패:', err);
+        throw err;
+      }
+    }
 
     try {
       const stream = await mediaDevices.getUserMedia({
@@ -36,6 +71,11 @@ export class WebRTCManager {
 
       stream.getAudioTracks().forEach((track) => {
         track.enabled = false;
+      });
+
+      // 이미 만들어진 피어에 로컬 트랙을 추가 (초기화 타이밍 이슈 대응)
+      this.peers.forEach((pc, peerId) => {
+        this.attachLocalStreamToPeer(peerId, pc);
       });
 
       if (InCallManager) {
@@ -61,11 +101,7 @@ export class WebRTCManager {
 
     const pc = new RTCPeerConnection(RTC_CONFIGURATION);
 
-    if (this.localStream) {
-      this.localStream.getTracks().forEach((track) => {
-        pc.addTrack(track, this.localStream!);
-      });
-    }
+    this.attachLocalStreamToPeer(peerId, pc);
 
     pc.onicecandidate = (event) => {
       if (event.candidate && this.sendSignal) {
@@ -77,6 +113,10 @@ export class WebRTCManager {
     };
 
     pc.ontrack = (event) => {
+      const stream = event.streams?.[0];
+      if (stream) {
+        this.remoteStreams.set(peerId, stream);
+      }
       console.log('Received remote track from', peerId);
     };
 
@@ -169,6 +209,7 @@ export class WebRTCManager {
   cleanup(): void {
     this.peers.forEach((pc) => pc.close());
     this.peers.clear();
+    this.remoteStreams.clear();
 
     if (this.localStream) {
       this.localStream.getTracks().forEach((track) => track.stop());

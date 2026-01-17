@@ -669,6 +669,13 @@ export const useGameLogic = () => {
       setIsConnected(false);
       return false;
     }
+
+    // 방에 있는 동안에는 기존 연결을 끊지 않음 (즉시 튕김 방지)
+    if (roomId && wsClient.isConnected()) {
+      console.log('[GameLogic] In-room connection is already active, skipping reconnect');
+      setIsConnected(true);
+      return true;
+    }
     
     // 기존 연결이 있으면 먼저 끊기
     wsClient.disconnect();

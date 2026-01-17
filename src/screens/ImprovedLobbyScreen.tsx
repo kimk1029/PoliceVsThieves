@@ -68,7 +68,9 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
         setPlayerName(savedNickname);
       }
       // 메인 화면 렌더 시 서버 상태 체크
-      await checkConnection();
+      if (!useGameStore.getState().roomId) {
+        await checkConnection();
+      }
     };
     initPlayer();
   }, []);

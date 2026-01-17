@@ -65,6 +65,21 @@ const App = (): React.JSX.Element => {
     };
   }, []);
 
+  // 앱 시작 시 카메라/마이크 권한 요청 (Android)
+  useEffect(() => {
+    (async () => {
+      if (Platform.OS !== 'android') return;
+      try {
+        await PermissionsAndroid.requestMultiple([
+          PermissionsAndroid.PERMISSIONS.CAMERA,
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        ]);
+      } catch (e) {
+        console.warn('[App] Failed to request camera/mic permissions', e);
+      }
+    })();
+  }, []);
+
   // 게임 진입 시 위치 트래킹 시작(1회)
   const startedLocationRef = useRef(false);
   const [hasLocationPermission, setHasLocationPermission] = useState(false);
