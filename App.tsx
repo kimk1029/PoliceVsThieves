@@ -12,6 +12,8 @@ import { useGameStore } from './src/store/useGameStore';
 import { usePlayerStore } from './src/store/usePlayerStore';
 import { useGameLogic } from './src/hooks/useGameLogic';
 import KeepAwake from 'react-native-keep-awake';
+import Geolocation from 'react-native-geolocation-service';
+import {Camera} from 'react-native-vision-camera';
 
 // Screens
 import { SplashScreen } from './src/screens/SplashScreen';
@@ -59,10 +61,17 @@ const App = (): React.JSX.Element => {
 
   // 앱 실행 중 화면 꺼짐 방지
   useEffect(() => {
-    KeepAwake.activate();
-    return () => {
-      KeepAwake.deactivate();
-    };
+    // iOS에서 react-native-keep-awake가 제대로 링크되지 않았을 수 있으므로 안전하게 처리
+    if (KeepAwake && typeof KeepAwake.activate === 'function') {
+      KeepAwake.activate();
+      return () => {
+        if (KeepAwake && typeof KeepAwake.deactivate === 'function') {
+          KeepAwake.deactivate();
+        }
+      };
+    } else {
+      console.warn('[App] react-native-keep-awake is not available');
+    }
   }, []);
 
   // 게임 진입 시 위치 트래킹 시작(1회)
@@ -92,8 +101,47 @@ const App = (): React.JSX.Element => {
             PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
           ]);
         } else {
-          // iOS: 위치 권한은 시스템이 자동으로 처리
-          setHasLocationPermission(true);
+          // iOS: 모든 권한을 순차적으로 요청
+          // 1. 위치 권한 (가장 중요 - 먼저 요청)
+          try {
+            const locationAuth = await Geolocation.requestAuthorization('whenInUse');
+            const hasLocation = locationAuth === 'granted';
+            setHasLocationPermission(hasLocation);
+            
+            if (!hasLocation) {
+              Alert.alert(
+                '위치 권한 필요',
+                '게임 진행을 위해 현재 위치 권한이 필요합니다.',
+                [
+                  { text: '닫기', style: 'cancel' },
+                  { text: '설정 열기', onPress: () => Linking.openSettings() },
+                ],
+              );
+              return;
+            }
+          } catch (locationErr) {
+            console.warn('[App] 위치 권한 요청 실패:', locationErr);
+          }
+
+          // 2. 카메라 권한 (위치 권한 후 요청)
+          try {
+            const cameraStatus = await Camera.requestCameraPermission();
+            if (cameraStatus !== 'granted') {
+              console.warn('[App] 카메라 권한이 거부되었습니다:', cameraStatus);
+            }
+          } catch (cameraErr) {
+            console.warn('[App] 카메라 권한 요청 실패:', cameraErr);
+          }
+
+          // 3. 마이크 권한 (카메라 권한 후 요청)
+          try {
+            const microphoneStatus = await Camera.requestMicrophonePermission();
+            if (microphoneStatus !== 'granted') {
+              console.warn('[App] 마이크 권한이 거부되었습니다:', microphoneStatus);
+            }
+          } catch (micErr) {
+            console.warn('[App] 마이크 권한 요청 실패:', micErr);
+          }
         }
       } catch (e) {
         console.warn('[App] Failed to request permissions', e);
