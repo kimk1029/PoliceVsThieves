@@ -42,3 +42,49 @@ export function isStage(): boolean {
   return Boolean(NativeModules?.AppConfig?.IS_STAGE);
 }
 
+type IceServer = {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
+};
+
+const DEFAULT_STUN_SERVERS = [
+  'stun:stun.l.google.com:19302',
+  'stun:stun1.l.google.com:19302',
+];
+
+function parseUrls(raw?: string): string[] {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+export function getIceServers(): IceServer[] {
+  const turnUrls = parseUrls(NativeModules?.AppConfig?.TURN_URL);
+  const turnUsername = NativeModules?.AppConfig?.TURN_USERNAME;
+  const turnCredential = NativeModules?.AppConfig?.TURN_CREDENTIAL;
+
+  const iceServers: IceServer[] = [
+    ...DEFAULT_STUN_SERVERS.map(url => ({urls: url})),
+  ];
+
+  if (turnUrls.length > 0) {
+    iceServers.unshift({
+      urls: turnUrls,
+      username: turnUsername,
+      credential: turnCredential,
+    });
+
+    if (!turnUsername || !turnCredential) {
+      console.warn('[pntConfig] TURN credentials missing');
+    }
+  } else {
+    console.warn('[pntConfig] TURN_URL not set, using STUN only');
+  }
+
+  console.log('[pntConfig] ICE servers:', iceServers);
+  return iceServers;
+}
+

@@ -27,11 +27,30 @@ RCT_EXPORT_MODULE(AppConfig)
     isStage = [s isEqualToString:@"1"] || [s isEqualToString:@"true"] || [s isEqualToString:@"yes"];
   }
 
-  NSLog(@"[AppConfig] PNT_API_BASE_URL=%@ PNT_STAGE=%@", apiBaseUrl, isStage ? @"true" : @"false");
+  // TURN server config (for WebRTC P2P across different networks)
+  id turnUrlRaw = info[@"PNT_TURN_URL"];
+  NSString *turnUrl = ([turnUrlRaw isKindOfClass:[NSString class]] && [(NSString *)turnUrlRaw length] > 0)
+      ? (NSString *)turnUrlRaw
+      : @"";
+
+  id turnUsernameRaw = info[@"PNT_TURN_USERNAME"];
+  NSString *turnUsername = ([turnUsernameRaw isKindOfClass:[NSString class]] && [(NSString *)turnUsernameRaw length] > 0)
+      ? (NSString *)turnUsernameRaw
+      : @"";
+
+  id turnCredentialRaw = info[@"PNT_TURN_CREDENTIAL"];
+  NSString *turnCredential = ([turnCredentialRaw isKindOfClass:[NSString class]] && [(NSString *)turnCredentialRaw length] > 0)
+      ? (NSString *)turnCredentialRaw
+      : @"";
+
+  NSLog(@"[AppConfig] PNT_API_BASE_URL=%@ PNT_STAGE=%@ TURN_URL=%@", apiBaseUrl, isStage ? @"true" : @"false", turnUrl.length > 0 ? turnUrl : @"(not set)");
 
   return @{
     @"API_BASE_URL": apiBaseUrl,
     @"IS_STAGE": @(isStage),
+    @"TURN_URL": turnUrl,
+    @"TURN_USERNAME": turnUsername,
+    @"TURN_CREDENTIAL": turnCredential,
   };
 }
 

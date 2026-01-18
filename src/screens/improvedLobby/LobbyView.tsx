@@ -10,8 +10,10 @@ import {
   TouchableOpacity,
   View,
   Platform,
+  StyleSheet,
 } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
+import Slider from '@react-native-community/slider';
 
 import {PixelButton} from '../../components/pixel/PixelButton';
 import {PixelInput} from '../../components/pixel/PixelInput';
@@ -50,8 +52,8 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
 }) => {
   const [showQR, setShowQR] = React.useState(false);
   const [showSettings, setShowSettings] = React.useState(false);
-  const [hidingSecondsDraft, setHidingSecondsDraft] = React.useState('60');
-  const [totalMinutesDraft, setTotalMinutesDraft] = React.useState('5');
+  const [hidingSecondsDraft, setHidingSecondsDraft] = React.useState(60);
+  const [totalMinutesDraft, setTotalMinutesDraft] = React.useState(5);
   const [gameModeDraft, setGameModeDraft] = React.useState<'BASIC' | 'ITEM_FIND'>('BASIC');
   const chatScrollRef = React.useRef<ScrollView>(null);
 
@@ -76,8 +78,8 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   };
 
   const openSettings = () => {
-    setHidingSecondsDraft(String(settings?.hidingSeconds ?? 60));
-    setTotalMinutesDraft(String(Math.max(1, Math.round((settings?.chaseSeconds ?? 300) / 60))));
+    setHidingSecondsDraft(settings?.hidingSeconds ?? 60);
+    setTotalMinutesDraft(Math.max(1, Math.round((settings?.chaseSeconds ?? 300) / 60)));
     setGameModeDraft((settings?.gameMode as any) || 'BASIC');
     setShowSettings(true);
   };
@@ -203,18 +205,26 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
           <PixelButton text="EXIT" variant="danger" size="large" onPress={onExit} />
         </View>
         {isHost && (
-          <View style={{flex: 2, marginLeft: 8}}>
-            <PixelButton
-              text={allTeamsAssigned ? 'START' : 'SHUFFLE & START'}
-              variant={allTeamsAssigned ? 'success' : 'primary'}
-              size="large"
-              disabled={playersList.length < 2}
-              onPress={() => {
-                if (!allTeamsAssigned) onShuffleTeams();
-                else onStartGame();
-              }}
-            />
-          </View>
+          <>
+            <View style={{flex: 1, marginLeft: 8, marginRight: 8}}>
+              <PixelButton
+                text="SHUFFLE"
+                variant="warning"
+                size="large"
+                disabled={playersList.length < 2}
+                onPress={onShuffleTeams}
+              />
+            </View>
+            <View style={{flex: 1, marginLeft: 8}}>
+              <PixelButton
+                text="START"
+                variant={allTeamsAssigned ? 'success' : 'secondary'}
+                size="large"
+                disabled={playersList.length < 2 || !allTeamsAssigned}
+                onPress={onStartGame}
+              />
+            </View>
+          </>
         )}
       </View>
 
@@ -248,7 +258,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
             </View>
             <View style={styles.qrBody}>
               <Text style={[styles.modalText, {marginBottom: 8}]}>GAME MODE</Text>
-              <View style={{flexDirection: 'row', width: '100%', marginBottom: 10}}>
+              <View style={{flexDirection: 'row', width: '100%', marginBottom: 16}}>
                 <View style={{flex: 1, marginRight: 6}}>
                   <PixelButton
                     text="BASIC"
@@ -267,34 +277,59 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                 </View>
               </View>
 
-              <PixelInput
-                label="HIDING (SEC)"
-                value={hidingSecondsDraft}
-                onChangeText={(t) => setHidingSecondsDraft(t.replace(/[^0-9]/g, ''))}
-                keyboardType="number-pad"
-                placeholder="60"
-              />
+              {/* Hiding Time Slider */}
+              <View style={{width: '100%', marginBottom: 16}}>
+                <Text style={[styles.modalText, {marginBottom: 8}]}>
+                  HIDING TIME: {hidingSecondsDraft}초
+                </Text>
+                <Slider
+                  style={{width: '100%', height: 40}}
+                  minimumValue={10}
+                  maximumValue={300}
+                  step={10}
+                  value={hidingSecondsDraft}
+                  onValueChange={setHidingSecondsDraft}
+                  minimumTrackTintColor="#00FF00"
+                  maximumTrackTintColor="#004400"
+                  thumbTintColor="#00FF00"
+                />
+                <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
+                  <Text style={sliderStyles.sliderLabel}>10초</Text>
+                  <Text style={sliderStyles.sliderLabel}>300초</Text>
+                </View>
+              </View>
 
-              <PixelInput
-                label="TOTAL (MIN)  기본 5분"
-                value={totalMinutesDraft}
-                onChangeText={(t) => setTotalMinutesDraft(t.replace(/[^0-9]/g, ''))}
-                keyboardType="number-pad"
-                placeholder="5"
-              />
-              <View style={{height: 8}} />
+              {/* Total Game Time Slider */}
+              <View style={{width: '100%', marginBottom: 16}}>
+                <Text style={[styles.modalText, {marginBottom: 8}]}>
+                  TOTAL GAME TIME: {totalMinutesDraft}분
+                </Text>
+                <Slider
+                  style={{width: '100%', height: 40}}
+                  minimumValue={1}
+                  maximumValue={30}
+                  step={1}
+                  value={totalMinutesDraft}
+                  onValueChange={setTotalMinutesDraft}
+                  minimumTrackTintColor="#FF00FF"
+                  maximumTrackTintColor="#440044"
+                  thumbTintColor="#FF00FF"
+                />
+                <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
+                  <Text style={sliderStyles.sliderLabel}>1분</Text>
+                  <Text style={sliderStyles.sliderLabel}>30분</Text>
+                </View>
+              </View>
+
               <View style={{width: '100%'}}>
                 <PixelButton
                   text="APPLY"
                   variant="success"
                   size="medium"
                   onPress={() => {
-                    const hidingN = parseInt(hidingSecondsDraft || '0', 10);
-                    const hidingClamped = Number.isFinite(hidingN) ? Math.max(5, Math.min(600, hidingN)) : 60;
-
-                    const minutesN = parseInt(totalMinutesDraft || '0', 10);
-                    const minutesClamped = Number.isFinite(minutesN) ? Math.max(1, Math.min(60, minutesN)) : 5;
-                    const chaseSeconds = minutesClamped * 60; // 분 → 초
+                    const hidingClamped = Math.max(10, Math.min(300, Math.round(hidingSecondsDraft)));
+                    const minutesClamped = Math.max(1, Math.min(30, Math.round(totalMinutesDraft)));
+                    const chaseSeconds = minutesClamped * 60;
 
                     onUpdateSettings({
                       gameMode: gameModeDraft,
@@ -317,3 +352,10 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   );
 };
 
+const sliderStyles = StyleSheet.create({
+  sliderLabel: {
+    fontFamily: 'PressStart2P-Regular',
+    fontSize: 8,
+    color: '#00FF00',
+  },
+});

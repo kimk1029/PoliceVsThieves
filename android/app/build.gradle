@@ -102,8 +102,20 @@ android {
         def pntApiBaseUrl = (project.findProperty("PNT_API_BASE_URL") ?: "http://localhost:9001").toString()
         def pntStageFlag = (project.findProperty("PNT_STAGE") ?: "false").toString().toBoolean()
 
+        // =========================
+        // TURN server config (for WebRTC P2P across different networks)
+        // - Set via gradle properties: -PPNT_TURN_URL=turn:your.turn.server:3478 -PPNT_TURN_USERNAME=user -PPNT_TURN_CREDENTIAL=pass
+        // - Or use free TURN: https://www.metered.ca/tools/openrelay/ or Twilio
+        // =========================
+        def pntTurnUrl = (project.findProperty("PNT_TURN_URL") ?: "").toString()
+        def pntTurnUsername = (project.findProperty("PNT_TURN_USERNAME") ?: "").toString()
+        def pntTurnCredential = (project.findProperty("PNT_TURN_CREDENTIAL") ?: "").toString()
+
         buildConfigField "String", "PNT_API_BASE_URL", "\"${pntApiBaseUrl}\""
         buildConfigField "boolean", "PNT_STAGE", "${pntStageFlag}"
+        buildConfigField "String", "PNT_TURN_URL", "\"${pntTurnUrl}\""
+        buildConfigField "String", "PNT_TURN_USERNAME", "\"${pntTurnUsername}\""
+        buildConfigField "String", "PNT_TURN_CREDENTIAL", "\"${pntTurnCredential}\""
     }
     signingConfigs {
         debug {

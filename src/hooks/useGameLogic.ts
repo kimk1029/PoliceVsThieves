@@ -42,6 +42,20 @@ export const useGameLogic = () => {
   const connectedThievesRef = useRef<Set<string>>(new Set());
   const ignoreRoomMessagesRef = useRef(false);
 
+  const getEffectiveTeam = useCallback(() => {
+    const storeTeam = usePlayerStore.getState().team;
+    if (storeTeam) return storeTeam;
+    if (team) return team;
+    const me = Array.from(players.values()).find(
+      (p: any) => (p?.playerId || p?.id) === playerId,
+    );
+    const derivedTeam = me?.team ?? null;
+    if (derivedTeam && derivedTeam !== team) {
+      usePlayerStore.getState().setTeam(derivedTeam);
+    }
+    return derivedTeam;
+  }, [players, playerId, team]);
+
   const isValidLocation = (location: Location | null | undefined) => {
     if (!location) return false;
     return (
@@ -57,6 +71,7 @@ export const useGameLogic = () => {
   const sendWebRTCSignal = useCallback(
     (targetId: string | 'broadcast', signal: any) => {
       if (!roomId || !playerId) return;
+      console.log('[PTT] sendWebRTCSignal', { targetId, type: signal?.type });
       wsClient.send({
         type: 'webrtc:signal',
         playerId,
@@ -72,18 +87,33 @@ export const useGameLogic = () => {
 
   const handleWebRTCSignal = useCallback(
     async (fromPlayerId: string, signal: any) => {
-      if (!signal || !fromPlayerId) return;
-      if (team !== 'THIEF') return;
+      if (!signal || !fromPlayerId) {
+        console.log('[PTT] handleWebRTCSignal: invalid params', { fromPlayerId, signal });
+        return;
+      }
+      
+      console.log('[PTT] handleWebRTCSignal received', { 
+        fromPlayerId, 
+        signalType: signal?.type,
+        myTeam: team
+      });
+      
       try {
         if (!webrtcReadyRef.current && roomId && playerId) {
+          console.log('[PTT] init WebRTC on signal', { fromPlayerId, type: signal?.type });
           await webrtcManager.initialize(sendWebRTCSignal);
           webrtcReadyRef.current = true;
           setWebrtcReady(true);
         }
+        console.log('[PTT] handleWebRTCSignal processing', { fromPlayerId, type: signal?.type });
         if (signal.type === 'offer') {
+          console.log('[PTT] handling offer from', fromPlayerId);
           await webrtcManager.handleOffer(fromPlayerId, signal);
+          console.log('[PTT] offer handled successfully');
         } else if (signal.type === 'answer') {
+          console.log('[PTT] handling answer from', fromPlayerId);
           await webrtcManager.handleAnswer(fromPlayerId, signal);
+          console.log('[PTT] answer handled successfully');
         } else if (signal.type === 'ice') {
           await webrtcManager.handleIceCandidate(fromPlayerId, signal.candidate);
         }
@@ -93,6 +123,47 @@ export const useGameLogic = () => {
     },
     [playerId, roomId, sendWebRTCSignal, team, webrtcManager],
   );
+
+  const ensureWebRTCReady = useCallback(async (): Promise<boolean> => {
+    const effectiveTeam = getEffectiveTeam();
+    if (effectiveTeam !== 'THIEF') {
+      console.log('[PTT] ensureWebRTCReady: not THIEF team', { team, effectiveTeam });
+      return false;
+    }
+    if (webrtcReadyRef.current || webrtcReady) {
+      console.log('[PTT] ensureWebRTCReady: already ready', { ref: webrtcReadyRef.current, state: webrtcReady });
+      return true;
+    }
+    if (!isConnected || !roomId || !playerId) {
+      console.log('[PTT] ensureWebRTCReady: missing prerequisites', { isConnected, roomId, playerId });
+      return false;
+    }
+
+    try {
+      console.log('[PTT] ensureWebRTCReady: initializing');
+      await webrtcManager.initialize(sendWebRTCSignal);
+      webrtcReadyRef.current = true;
+      setWebrtcReady(true);
+      console.log('[PTT] ensureWebRTCReady: initialized successfully');
+      return true;
+    } catch (error) {
+      console.warn('[PTT] ensureWebRTCReady failed', error);
+      return false;
+    }
+  }, [isConnected, playerId, roomId, sendWebRTCSignal, team, webrtcManager, webrtcReady]);
+
+  const connectToAllThieves = useCallback(() => {
+    if (team !== 'THIEF' || !playerId) return;
+    const thiefIds = Array.from(players.values())
+      .filter((p: any) => p.team === 'THIEF' && p.playerId !== playerId)
+      .map((p: any) => p.playerId);
+
+    thiefIds.forEach((thiefId) => {
+      if (connectedThievesRef.current.has(thiefId)) return;
+      connectedThievesRef.current.add(thiefId);
+      webrtcManager.connectToThieves([thiefId]);
+    });
+  }, [players, playerId, team, webrtcManager]);
 
   useEffect(() => {
     AsyncStorage.getItem(ROOM_ID_KEY)
@@ -138,18 +209,8 @@ export const useGameLogic = () => {
   // 도둑끼리 WebRTC 연결
   useEffect(() => {
     if (!webrtcReady) return;
-    if (team !== 'THIEF' || !playerId) return;
-
-    const thiefIds = Array.from(players.values())
-      .filter((p: any) => p.team === 'THIEF' && p.playerId !== playerId)
-      .map((p: any) => p.playerId);
-
-    thiefIds.forEach((thiefId) => {
-      if (connectedThievesRef.current.has(thiefId)) return;
-      connectedThievesRef.current.add(thiefId);
-      webrtcManager.connectToThieves([thiefId]);
-    });
-  }, [players, team, playerId, webrtcManager, webrtcReady]);
+    connectToAllThieves();
+  }, [connectToAllThieves, webrtcReady]);
 
   // 팀 변경/방 이탈 시 WebRTC 정리
   useEffect(() => {
@@ -596,6 +657,7 @@ export const useGameLogic = () => {
             const fromPlayerId = message.playerId || message.data?.playerId;
             const signal = message.data?.signal || message.payload?.signal;
             if (fromPlayerId && signal) {
+              console.log('[PTT] recv webrtc:signal', { fromPlayerId, type: signal?.type });
               handleWebRTCSignal(fromPlayerId, signal);
             }
             break;
@@ -604,9 +666,27 @@ export const useGameLogic = () => {
           case 'ptt:status': {
             const activeThiefId = message.data?.activeThiefId ?? null;
             const activeThiefNickname = message.data?.activeThiefNickname ?? null;
+            console.log('[PTT] recv ptt:status', { activeThiefId, activeThiefNickname });
+            const effectiveTeam = getEffectiveTeam();
+            if (effectiveTeam !== 'THIEF') {
+              if (activeThiefId && activeThiefId === playerId) {
+                console.log('[PTT] team unknown but I have token; treating as THIEF');
+                usePlayerStore.getState().setTeam('THIEF');
+              } else {
+                console.log('[PTT] ignoring ptt:status for non-thief team', { team, effectiveTeam });
+                break;
+              }
+            }
             setActivePTT({activeThiefId, activeThiefNickname});
             if (activeThiefId && activeThiefId === playerId) {
-              webrtcManager.startTransmitting();
+              ensureWebRTCReady().then((ready) => {
+                if (ready) {
+                  connectToAllThieves();
+                  webrtcManager.startTransmitting();
+                } else {
+                  console.warn('[PTT] WebRTC not ready, cannot transmit');
+                }
+              });
             } else {
               webrtcManager.stopTransmitting();
             }
@@ -1068,7 +1148,19 @@ export const useGameLogic = () => {
   );
 
   const requestPTT = useCallback(() => {
-    if (!isConnected || !roomId || team !== 'THIEF' || !playerId) return;
+    const effectiveTeam = getEffectiveTeam();
+    if (!isConnected || !roomId || !playerId) {
+      console.log('[PTT] requestPTT blocked', { isConnected, roomId, playerId, team, effectiveTeam });
+      return;
+    }
+    if (effectiveTeam && effectiveTeam !== 'THIEF') {
+      console.log('[PTT] requestPTT blocked', { isConnected, roomId, playerId, team, effectiveTeam });
+      return;
+    }
+    if (!effectiveTeam) {
+      console.log('[PTT] requestPTT allowed with unknown team; server will validate', { playerId });
+    }
+    console.log('[PTT] requestPTT', { roomId, playerId });
     wsClient.send({
       type: 'ptt:request',
       playerId,
@@ -1078,7 +1170,19 @@ export const useGameLogic = () => {
   }, [isConnected, roomId, playerId, team, wsClient]);
 
   const releasePTT = useCallback(() => {
-    if (!isConnected || !roomId || team !== 'THIEF' || !playerId) return;
+    const effectiveTeam = getEffectiveTeam();
+    if (!isConnected || !roomId || !playerId) {
+      console.log('[PTT] releasePTT blocked', { isConnected, roomId, playerId, team, effectiveTeam });
+      return;
+    }
+    if (effectiveTeam && effectiveTeam !== 'THIEF') {
+      console.log('[PTT] releasePTT blocked', { isConnected, roomId, playerId, team, effectiveTeam });
+      return;
+    }
+    if (!effectiveTeam) {
+      console.log('[PTT] releasePTT allowed with unknown team; server will validate', { playerId });
+    }
+    console.log('[PTT] releasePTT', { roomId, playerId });
     wsClient.send({
       type: 'ptt:release',
       playerId,

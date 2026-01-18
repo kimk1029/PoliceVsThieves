@@ -4,10 +4,13 @@ import {
   Platform,
   PermissionsAndroid,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useGameStore } from '../store/useGameStore';
 import { LobbyView } from './improvedLobby/LobbyView';
 import { MainEntryView } from './improvedLobby/MainEntryView';
+
+const ROOM_SETTINGS_KEY = '@police_vs_thieves_room_settings';
 
 interface ImprovedLobbyScreenProps {
   onNavigate: (screen: string, params?: any) => void;
@@ -57,8 +60,9 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
   } = gameLogic;
 
   const [showReconnectingModal, setShowReconnectingModal] = useState(false);
+  const [savedSettings, setSavedSettings] = useState<any>(null);
 
-  // 초기화: playerId 로드, 닉네임 불러오기, 서버 상태 체크
+  // 초기화: playerId 로드, 닉네임 불러오기, 저장된 설정 불러오기, 서버 상태 체크
   useEffect(() => {
     const initPlayer = async () => {
       await usePlayerStore.getState().loadPlayerId();
@@ -66,6 +70,17 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
       const savedNickname = await loadNickname();
       if (savedNickname) {
         setPlayerName(savedNickname);
+      }
+      // 저장된 방 설정 불러오기
+      try {
+        const settingsStr = await AsyncStorage.getItem(ROOM_SETTINGS_KEY);
+        if (settingsStr) {
+          const parsed = JSON.parse(settingsStr);
+          setSavedSettings(parsed);
+          console.log('[Lobby] Loaded saved settings:', parsed);
+        }
+      } catch (error) {
+        console.warn('[Lobby] Failed to load saved settings', error);
       }
       // 메인 화면 렌더 시 서버 상태 체크
       if (!useGameStore.getState().roomId) {
@@ -106,14 +121,21 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
       return;
     }
     await setNickname(playerName);
-    await createRoom(playerName, {
+    
+    // 저장된 설정이 있으면 사용, 없으면 기본값 사용
+    const defaultSettings = {
       maxPlayers: 20,
       hidingSeconds: 60,
-      chaseSeconds: 600,
+      chaseSeconds: 300,
       proximityRadiusMeters: 30,
       captureRadiusMeters: 50,
       jailRadiusMeters: 15,
-    });
+      gameMode: 'BASIC',
+    };
+    const settingsToUse = savedSettings || defaultSettings;
+    
+    console.log('[Lobby] Creating room with settings:', settingsToUse);
+    await createRoom(playerName, settingsToUse);
   };
 
   const handleJoinRoom = async () => {
@@ -237,7 +259,19 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
         }}
         onShuffleTeams={shuffleTeams}
         onStartGame={startGame}
-        onUpdateSettings={updateRoomSettings}
+        onUpdateSettings={(newSettings) => {
+          updateRoomSettings(newSettings);
+          // 설정 변경 시 저장
+          AsyncStorage.setItem(ROOM_SETTINGS_KEY, JSON.stringify({
+            ...savedSettings,
+            ...newSettings,
+          })).then(() => {
+            setSavedSettings((prev: any) => ({ ...prev, ...newSettings }));
+            console.log('[Lobby] Settings saved:', newSettings);
+          }).catch((error) => {
+            console.warn('[Lobby] Failed to save settings', error);
+          });
+        }}
       />
     );
   }

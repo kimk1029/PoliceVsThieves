@@ -47,6 +47,12 @@
 	<string>$(PNT_API_BASE_URL)</string>
 	<key>PNT_STAGE</key>
 	<string>$(PNT_STAGE)</string>
+	<key>PNT_TURN_URL</key>
+	<string>turn:112.169.110.183:3478</string>
+	<key>PNT_TURN_USERNAME</key>
+	<string>pnt_turn_user</string>
+	<key>PNT_TURN_CREDENTIAL</key>
+	<string>877cea497c867e6e88c7281a04468125</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
