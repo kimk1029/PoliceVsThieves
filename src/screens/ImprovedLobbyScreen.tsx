@@ -131,6 +131,7 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
       captureRadiusMeters: 50,
       jailRadiusMeters: 15,
       gameMode: 'BASIC',
+      policeRatio: 0.5, // 5:5 비율 (홀수일 경우 경찰이 더 많음)
     };
     const settingsToUse = savedSettings || defaultSettings;
     

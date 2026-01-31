@@ -35,6 +35,7 @@ export interface RoomSettings {
   proximityRadiusMeters: number;
   captureRadiusMeters: number;
   jailRadiusMeters: number;
+  policeRatio?: number; // 0.0 ~ 1.0, 경찰 비율 (기본값 0.5 = 5:5)
 }
 
 export interface Basecamp {

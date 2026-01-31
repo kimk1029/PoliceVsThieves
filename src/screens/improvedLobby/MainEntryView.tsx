@@ -15,6 +15,7 @@ import {
 import { PixelButton } from '../../components/pixel/PixelButton';
 import { PixelCard } from '../../components/pixel/PixelCard';
 import { PixelInput } from '../../components/pixel/PixelInput';
+import { AdBanner } from '../../components/AdBanner';
 import { styles } from './styles';
 import { QRScanModal } from './QRScanModal';
 
@@ -93,81 +94,94 @@ export const MainEntryView: React.FC<MainEntryViewProps> = ({
               resizeMode="contain"
             />
           </View>
-
-        {/* 1. PLAYER INFO CARD */}
-        <PixelCard title="PLAYER" style={{ marginBottom: 20 }}>
-          <PixelInput
-            label="NICKNAME"
-            placeholder="NAME"
-            value={playerName}
-            onChangeText={onChangePlayerName}
-            maxLength={12}
-          />
-        </PixelCard>
-
-        {/* 2. ACTION ROW (HOST / JOIN) */}
-        <View style={styles.actionRow}>
-          {/* HOST */}
-          <View style={{ flex: 1, marginRight: 8 }}>
-            <PixelCard title="HOST" style={{ flex: 1 }}>
-              <View style={{ justifyContent: 'center', alignItems: 'center', marginBottom: 6 }}>
-                <Text style={styles.hint}>NEW GAME</Text>
-              </View>
-              <PixelButton text="CREATE" variant="danger" size="medium" onPress={onCreateRoom} />
-              <View style={{ height: 10 }} />
+          <View style={styles.mainContentWrapper}>
+            {/* 1. PLAYER INFO CARD */}
+            <PixelCard title="PLAYER" style={{ marginBottom: 20 }}>
+              <PixelInput
+                label="NICKNAME"
+                placeholder="NAME"
+                value={playerName}
+                onChangeText={onChangePlayerName}
+                maxLength={12}
+              />
             </PixelCard>
-          </View>
 
-          {/* JOIN */}
-          <View style={{ flex: 1, marginLeft: 8 }}>
-            <PixelCard title="JOIN" style={{ flex: 1 }}>
-              <View style={{ marginBottom: 4 }}>
-                <PixelInput
-                  placeholder="CODE"
-                  value={roomCode}
-                  onChangeText={(t) => {
-                    const upper = t.toUpperCase().replace(/[^A-Z0-9]/g, '');
-                    onChangeRoomCode(upper);
-                  }}
-                  maxLength={6}
-                  autoCapitalize="characters"
-                  style={{ textAlign: 'center', fontSize: 18, letterSpacing: 2 }}
-                />
+            {/* 2. ACTION ROW (HOST / JOIN) */}
+            <View style={styles.actionRow}>
+              {/* HOST */}
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <PixelCard title="HOST" style={{ flex: 1 }}>
+                  <View style={{ justifyContent: 'center', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={styles.hint}>NEW GAME</Text>
+                  </View>
+                  <PixelButton text="CREATE" variant="danger" size="medium" onPress={onCreateRoom} />
+                  <View style={{ height: 10 }} />
+                </PixelCard>
               </View>
 
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <View style={{ flex: 1, marginRight: 4 }}>
-                  <PixelButton text="SCAN" variant="secondary" size="small" onPress={onOpenScanner} />
-                </View>
-                <View style={{ flex: 1, marginLeft: 4 }}>
-                  <PixelButton text="GO" variant="success" size="small" onPress={onJoinRoom} />
-                </View>
-              </View>
-            </PixelCard>
-          </View>
-        </View>
+              {/* JOIN */}
+              <View style={{ flex: 1, marginLeft: 8 }}>
+                <PixelCard title="JOIN" style={{ flex: 1 }}>
+                  <View style={{ marginBottom: 4 }}>
+                    <PixelInput
+                      placeholder="CODE"
+                      value={roomCode}
+                      onChangeText={(t) => {
+                        const upper = t.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                        onChangeRoomCode(upper);
+                      }}
+                      maxLength={6}
+                      autoCapitalize="characters"
+                      style={{ textAlign: 'center', fontSize: 18, letterSpacing: 2 }}
+                    />
+                  </View>
 
-        <QRScanModal
-          visible={showQRScan}
-          qrScannerSession={qrScannerSession}
-          playerName={playerName}
-          onScannedRaw={onScannedRaw}
-          onCancel={onCancelScan}
-        />
-
-        {/* Reconnecting Modal */}
-        <Modal visible={showReconnectingModal} transparent animationType="fade">
-          <View style={styles.modalBackdrop}>
-            <View style={styles.pixelModal}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>SYSTEM</Text>
-              </View>
-              <View style={styles.qrBody}>
-                <Text style={styles.modalText}>Reconnecting...</Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <View style={{ flex: 1, marginRight: 4 }}>
+                      <PixelButton text="SCAN" variant="secondary" size="small" onPress={onOpenScanner} />
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 4 }}>
+                      <PixelButton text="GO" variant="success" size="small" onPress={onJoinRoom} />
+                    </View>
+                  </View>
+                </PixelCard>
               </View>
             </View>
+
+            <QRScanModal
+              visible={showQRScan}
+              qrScannerSession={qrScannerSession}
+              playerName={playerName}
+              onScannedRaw={onScannedRaw}
+              onCancel={onCancelScan}
+            />
+
+            {/* Reconnecting Modal */}
+            <Modal visible={showReconnectingModal} transparent animationType="fade">
+              <View style={styles.modalBackdrop}>
+                <View style={styles.pixelModal}>
+                  <View style={styles.modalHeader}>
+                    <Text style={styles.modalTitle}>SYSTEM</Text>
+                  </View>
+                  <View style={styles.qrBody}>
+                    <Text style={styles.modalText}>Reconnecting...</Text>
+                  </View>
+                </View>
+              </View>
+            </Modal>
           </View>
-        </Modal>
+
+          {/* 배너 광고 (하단) - 에러 발생 시에도 앱이 크래시하지 않도록 완전히 감싸기 */}
+          <View style={styles.bottomBanner}>
+            {(() => {
+              try {
+                return <AdBanner />;
+              } catch (error) {
+                console.warn('[MainEntryView] AdBanner error:', error);
+                return null;
+              }
+            })()}
+          </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
     </ImageBackground>

@@ -55,7 +55,9 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   const [hidingSecondsDraft, setHidingSecondsDraft] = React.useState(60);
   const [totalMinutesDraft, setTotalMinutesDraft] = React.useState(5);
   const [gameModeDraft, setGameModeDraft] = React.useState<'BASIC' | 'ITEM_FIND'>('BASIC');
+  const [policeRatioDraft, setPoliceRatioDraft] = React.useState(0.5);
   const chatScrollRef = React.useRef<ScrollView>(null);
+  const policeRatioUpdateTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const playersList = React.useMemo(() => Array.from(players.values()), [players]);
   const isHost = React.useMemo(
@@ -81,8 +83,49 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     setHidingSecondsDraft(settings?.hidingSeconds ?? 60);
     setTotalMinutesDraft(Math.max(1, Math.round((settings?.chaseSeconds ?? 300) / 60)));
     setGameModeDraft((settings?.gameMode as any) || 'BASIC');
+    setPoliceRatioDraft(settings?.policeRatio ?? 0.5);
     setShowSettings(true);
   };
+
+  // 현재 플레이어 수 기준으로 경찰/도둑 수 계산 (미리보기용)
+  const calculateTeamDistribution = (ratio: number, totalPlayers: number) => {
+    if (totalPlayers < 2) {
+      return { police: 1, thief: 1 };
+    }
+    // 경찰 수 계산: 홀수일 경우 경찰이 더 많도록 올림 처리
+    let policeCount = Math.ceil(totalPlayers * ratio);
+    // 최소값 제한: 경찰 1명, 도둑 1명 보장
+    policeCount = Math.max(1, Math.min(totalPlayers - 1, policeCount));
+    const thiefCount = totalPlayers - policeCount;
+    return { police: policeCount, thief: thiefCount };
+  };
+
+  // 슬라이더 값 변경 시 즉시 서버에 저장 (debounce 적용)
+  const handlePoliceRatioChange = (value: number) => {
+    setPoliceRatioDraft(value);
+    
+    // 이전 타이머 취소
+    if (policeRatioUpdateTimeoutRef.current) {
+      clearTimeout(policeRatioUpdateTimeoutRef.current);
+    }
+    
+    // 300ms 후 서버에 저장 (너무 많은 요청 방지)
+    policeRatioUpdateTimeoutRef.current = setTimeout(() => {
+      const ratioClamped = Math.max(0.0, Math.min(1.0, value));
+      onUpdateSettings({
+        policeRatio: ratioClamped,
+      });
+    }, 300);
+  };
+
+  // 컴포넌트 언마운트 시 타이머 정리
+  React.useEffect(() => {
+    return () => {
+      if (policeRatioUpdateTimeoutRef.current) {
+        clearTimeout(policeRatioUpdateTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -321,6 +364,38 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                 </View>
               </View>
 
+              {/* Team Ratio Slider */}
+              <View style={{width: '100%', marginBottom: 16}}>
+                {(() => {
+                  const { police, thief } = calculateTeamDistribution(
+                    policeRatioDraft,
+                    playersList.length || 2,
+                  );
+                  return (
+                    <>
+                      <Text style={[styles.modalText, {marginBottom: 8}]}>
+                        TEAM RATIO: 경찰 {police} : 도둑 {thief}
+                      </Text>
+                      <Slider
+                        style={{width: '100%', height: 40}}
+                        minimumValue={0.0}
+                        maximumValue={1.0}
+                        step={0.05}
+                        value={policeRatioDraft}
+                        onValueChange={handlePoliceRatioChange}
+                        minimumTrackTintColor="#FFFF00"
+                        maximumTrackTintColor="#444400"
+                        thumbTintColor="#FFFF00"
+                      />
+                      <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
+                        <Text style={sliderStyles.sliderLabel}>도둑 많음</Text>
+                        <Text style={sliderStyles.sliderLabel}>경찰 많음</Text>
+                      </View>
+                    </>
+                  );
+                })()}
+              </View>
+
               <View style={{width: '100%'}}>
                 <PixelButton
                   text="APPLY"
@@ -330,11 +405,19 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                     const hidingClamped = Math.max(10, Math.min(300, Math.round(hidingSecondsDraft)));
                     const minutesClamped = Math.max(1, Math.min(30, Math.round(totalMinutesDraft)));
                     const chaseSeconds = minutesClamped * 60;
+                    const ratioClamped = Math.max(0.0, Math.min(1.0, policeRatioDraft));
+
+                    // 마지막 변경사항이 아직 저장되지 않았을 수 있으므로 즉시 저장
+                    if (policeRatioUpdateTimeoutRef.current) {
+                      clearTimeout(policeRatioUpdateTimeoutRef.current);
+                      policeRatioUpdateTimeoutRef.current = null;
+                    }
 
                     onUpdateSettings({
                       gameMode: gameModeDraft,
                       hidingSeconds: hidingClamped,
                       chaseSeconds,
+                      policeRatio: ratioClamped,
                     });
                     setShowSettings(false);
                   }}
@@ -344,6 +427,18 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
               <Text style={styles.modalText}>
                 CURRENT: MODE {(settings?.gameMode || 'BASIC') === 'BASIC' ? 'BASIC' : 'ITEM'} / HIDE {settings?.hidingSeconds ?? 60}s / TOTAL {Math.round((settings?.chaseSeconds ?? 300) / 60)}m
               </Text>
+              {(() => {
+                const currentRatio = settings?.policeRatio ?? 0.5;
+                const { police, thief } = calculateTeamDistribution(
+                  currentRatio,
+                  playersList.length || 2,
+                );
+                return (
+                  <Text style={styles.modalText}>
+                    RATIO: 경찰 {police} : 도둑 {thief} (셔플 버튼으로 적용)
+                  </Text>
+                );
+              })()}
             </View>
           </View>
         </View>

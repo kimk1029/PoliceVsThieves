@@ -11,6 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useGameStore } from './src/store/useGameStore';
 import { usePlayerStore } from './src/store/usePlayerStore';
 import { useGameLogic } from './src/hooks/useGameLogic';
+import { adService } from './src/services/ads/AdService';
 import KeepAwake from 'react-native-keep-awake';
 import Geolocation from 'react-native-geolocation-service';
 import {Camera} from 'react-native-vision-camera';
@@ -85,14 +86,14 @@ const App = (): React.JSX.Element => {
         if (Platform.OS === 'android') {
           // 1. 위치 권한 (가장 중요 - 먼저 요청)
           const locationGranted = await PermissionsAndroid.request(
-            PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-            {
-              title: '위치 권한',
-              message: '게임 진행을 위해 현재 위치 권한이 필요합니다.',
-              buttonNegative: '취소',
-              buttonPositive: '허용',
-            },
-          );
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+          {
+            title: '위치 권한',
+            message: '게임 진행을 위해 현재 위치 권한이 필요합니다.',
+            buttonNegative: '취소',
+            buttonPositive: '허용',
+          },
+        );
           setHasLocationPermission(locationGranted === PermissionsAndroid.RESULTS.GRANTED);
 
           // 2. 카메라/마이크 권한 (위치 권한 후 요청)
@@ -201,6 +202,26 @@ const App = (): React.JSX.Element => {
 
   const { team, location, playerId, nickname } = usePlayerStore();
   const { status, phaseEndsAt, players, settings, result } = useGameStore();
+
+  // AdMob 전면 광고 초기화 (에러 발생해도 앱이 크래시하지 않도록)
+  // 임시로 비활성화 - 앱이 정상 작동하는지 확인 후 다시 활성화
+  useEffect(() => {
+    // AdMob 초기화를 완전히 비활성화하여 앱 크래시 방지
+    // return;
+    
+    try {
+      // adService.initializeInterstitial();
+    } catch (error) {
+      console.warn('[App] Failed to initialize AdMob:', error);
+    }
+    return () => {
+      try {
+        // adService.cleanup();
+      } catch (error) {
+        console.warn('[App] Failed to cleanup AdMob:', error);
+      }
+    };
+  }, []);
 
   // 게임 종료 시 세션 정리
   useEffect(() => {

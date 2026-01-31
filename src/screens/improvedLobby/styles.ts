@@ -16,6 +16,10 @@ export const styles = StyleSheet.create({
   mainWrapper: {
     flex: 1,
     padding: 20,
+    justifyContent: 'flex-start',
+  },
+  mainContentWrapper: {
+    flex: 1,
     justifyContent: 'center',
   },
   logoSection: {
@@ -81,6 +85,12 @@ export const styles = StyleSheet.create({
     alignItems: 'stretch',
     // 좌/우 카드 세로높이를 동일하게 맞춤
     height: 180,
+  },
+  bottomBanner: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 6 : 8,
   },
   lobbyHeader: {
     flexDirection: 'row',
