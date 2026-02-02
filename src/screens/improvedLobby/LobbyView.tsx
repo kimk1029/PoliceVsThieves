@@ -15,11 +15,11 @@ import {
 import Clipboard from '@react-native-clipboard/clipboard';
 import Slider from '@react-native-community/slider';
 
-import {PixelButton} from '../../components/pixel/PixelButton';
-import {PixelInput} from '../../components/pixel/PixelInput';
-import {QRCodeView} from '../../components/QRCodeView';
-import {styles} from './styles';
-import {ChatMessage, Player, RoomSettings} from '../../types/game.types';
+import { PixelButton } from '../../components/pixel/PixelButton';
+import { PixelInput } from '../../components/pixel/PixelInput';
+import { QRCodeView } from '../../components/QRCodeView';
+import { styles } from './styles';
+import { ChatMessage, Player, RoomSettings } from '../../types/game.types';
 
 interface LobbyViewProps {
   roomId: string;
@@ -54,7 +54,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   const [showSettings, setShowSettings] = React.useState(false);
   const [hidingSecondsDraft, setHidingSecondsDraft] = React.useState(60);
   const [totalMinutesDraft, setTotalMinutesDraft] = React.useState(5);
-  const [gameModeDraft, setGameModeDraft] = React.useState<'BASIC' | 'ITEM_FIND'>('BASIC');
+  const [gameModeDraft, setGameModeDraft] = React.useState<'BASIC' | 'BATTLE'>('BASIC');
   const [policeRatioDraft, setPoliceRatioDraft] = React.useState(0.5);
   const chatScrollRef = React.useRef<ScrollView>(null);
   const policeRatioUpdateTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -71,7 +71,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
 
   React.useEffect(() => {
     if (chatScrollRef.current && chatMessages.length > 0) {
-      setTimeout(() => chatScrollRef.current?.scrollToEnd({animated: true}), 100);
+      setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 100);
     }
   }, [chatMessages]);
 
@@ -103,12 +103,12 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   // 슬라이더 값 변경 시 즉시 서버에 저장 (debounce 적용)
   const handlePoliceRatioChange = (value: number) => {
     setPoliceRatioDraft(value);
-    
+
     // 이전 타이머 취소
     if (policeRatioUpdateTimeoutRef.current) {
       clearTimeout(policeRatioUpdateTimeoutRef.current);
     }
-    
+
     // 300ms 후 서버에 저장 (너무 많은 요청 방지)
     policeRatioUpdateTimeoutRef.current = setTimeout(() => {
       const ratioClamped = Math.max(0.0, Math.min(1.0, value));
@@ -137,15 +137,21 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
           <Text style={styles.pixelValue}>{roomId}</Text>
         </View>
         <View style={styles.headerRight}>
-          <View style={{width: 60, marginRight: 6}}>
+          <View style={{ width: 60, marginRight: 6 }}>
             <PixelButton text="QR" size="small" variant="secondary" onPress={() => setShowQR(true)} />
           </View>
-          <View style={{width: 60}}>
+          <View style={{ width: 60 }}>
             <PixelButton text="COPY" size="small" variant="secondary" onPress={handleCopyRoomCode} />
           </View>
           {isHost && (
-            <View style={{width: 60, marginLeft: 6}}>
-              <PixelButton text="⚙" size="small" variant="secondary" onPress={openSettings} />
+            <View style={{ width: 60, marginLeft: 6 }}>
+              <PixelButton
+                text="⚙"
+                size="small"
+                variant="secondary"
+                onPress={openSettings}
+                textStyle={{ fontSize: 18 }}
+              />
             </View>
           )}
         </View>
@@ -160,7 +166,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
           <View style={styles.panelTitleBox}>
             <Text style={styles.panelTitle}>PLAYERS [{playersList.length}/20]</Text>
           </View>
-          <ScrollView style={{flex: 1}} contentContainerStyle={styles.gridContainer}>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.gridContainer}>
             {playersList.map((player, index) => {
               const isMe = player.playerId === playerId;
               const teamStyle =
@@ -191,13 +197,13 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
 
         {/* Chat */}
         <View style={[styles.panelBox, styles.chatPanel]}>
-          <View style={[styles.panelTitleBox, {backgroundColor: '#000'}]}>
-            <Text style={[styles.panelTitle, {color: '#00FF00', fontSize: 12}]}>SYSTEM_LOG</Text>
+          <View style={[styles.panelTitleBox, { backgroundColor: '#000' }]}>
+            <Text style={[styles.panelTitle, { color: '#00FF00', fontSize: 12 }]}>SYSTEM_LOG</Text>
           </View>
           <ScrollView
             style={styles.terminalScroll}
             ref={chatScrollRef}
-            contentContainerStyle={{padding: 6}}
+            contentContainerStyle={{ padding: 6 }}
           >
             {chatMessages.map((msg, index) => {
               const isMe = msg.playerId === playerId;
@@ -244,12 +250,12 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
 
       {/* Footer */}
       <View style={styles.footerBar}>
-        <View style={{flex: 1, marginRight: 8}}>
+        <View style={{ flex: 1, marginRight: 8 }}>
           <PixelButton text="EXIT" variant="danger" size="large" onPress={onExit} />
         </View>
         {isHost && (
           <>
-            <View style={{flex: 1, marginLeft: 8, marginRight: 8}}>
+            <View style={{ flex: 1, marginLeft: 8, marginRight: 8 }}>
               <PixelButton
                 text="SHUFFLE"
                 variant="warning"
@@ -258,7 +264,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                 onPress={onShuffleTeams}
               />
             </View>
-            <View style={{flex: 1, marginLeft: 8}}>
+            <View style={{ flex: 1, marginLeft: 8 }}>
               <PixelButton
                 text="START"
                 variant={allTeamsAssigned ? 'success' : 'secondary'}
@@ -300,9 +306,9 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
               </TouchableOpacity>
             </View>
             <View style={styles.qrBody}>
-              <Text style={[styles.modalText, {marginBottom: 8}]}>GAME MODE</Text>
-              <View style={{flexDirection: 'row', width: '100%', marginBottom: 16}}>
-                <View style={{flex: 1, marginRight: 6}}>
+              <Text style={[styles.modalText, { marginBottom: 8 }]}>GAME MODE</Text>
+              <View style={{ flexDirection: 'row', width: '100%', marginBottom: 16 }}>
+                <View style={{ flex: 1, marginRight: 6 }}>
                   <PixelButton
                     text="BASIC"
                     variant={gameModeDraft === 'BASIC' ? 'success' : 'secondary'}
@@ -310,7 +316,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                     onPress={() => setGameModeDraft('BASIC')}
                   />
                 </View>
-                <View style={{flex: 1, marginLeft: 6}}>
+                <View style={{ flex: 1, marginLeft: 6 }}>
                   <PixelButton
                     text="ITEM"
                     variant={gameModeDraft === 'ITEM_FIND' ? 'success' : 'secondary'}
@@ -321,12 +327,12 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
               </View>
 
               {/* Hiding Time Slider */}
-              <View style={{width: '100%', marginBottom: 16}}>
-                <Text style={[styles.modalText, {marginBottom: 8}]}>
+              <View style={{ width: '100%', marginBottom: 16 }}>
+                <Text style={[styles.modalText, { marginBottom: 8 }]}>
                   HIDING TIME: {hidingSecondsDraft}초
                 </Text>
                 <Slider
-                  style={{width: '100%', height: 40}}
+                  style={{ width: '100%', height: 40 }}
                   minimumValue={10}
                   maximumValue={300}
                   step={10}
@@ -336,19 +342,19 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                   maximumTrackTintColor="#004400"
                   thumbTintColor="#00FF00"
                 />
-                <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                   <Text style={sliderStyles.sliderLabel}>10초</Text>
                   <Text style={sliderStyles.sliderLabel}>300초</Text>
                 </View>
               </View>
 
               {/* Total Game Time Slider */}
-              <View style={{width: '100%', marginBottom: 16}}>
-                <Text style={[styles.modalText, {marginBottom: 8}]}>
+              <View style={{ width: '100%', marginBottom: 16 }}>
+                <Text style={[styles.modalText, { marginBottom: 8 }]}>
                   TOTAL GAME TIME: {totalMinutesDraft}분
                 </Text>
                 <Slider
-                  style={{width: '100%', height: 40}}
+                  style={{ width: '100%', height: 40 }}
                   minimumValue={1}
                   maximumValue={30}
                   step={1}
@@ -358,14 +364,14 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                   maximumTrackTintColor="#440044"
                   thumbTintColor="#FF00FF"
                 />
-                <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                   <Text style={sliderStyles.sliderLabel}>1분</Text>
                   <Text style={sliderStyles.sliderLabel}>30분</Text>
                 </View>
               </View>
 
               {/* Team Ratio Slider */}
-              <View style={{width: '100%', marginBottom: 16}}>
+              <View style={{ width: '100%', marginBottom: 16 }}>
                 {(() => {
                   const { police, thief } = calculateTeamDistribution(
                     policeRatioDraft,
@@ -373,11 +379,11 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                   );
                   return (
                     <>
-                      <Text style={[styles.modalText, {marginBottom: 8}]}>
+                      <Text style={[styles.modalText, { marginBottom: 8 }]}>
                         TEAM RATIO: 경찰 {police} : 도둑 {thief}
                       </Text>
                       <Slider
-                        style={{width: '100%', height: 40}}
+                        style={{ width: '100%', height: 40 }}
                         minimumValue={0.0}
                         maximumValue={1.0}
                         step={0.05}
@@ -387,7 +393,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                         maximumTrackTintColor="#444400"
                         thumbTintColor="#FFFF00"
                       />
-                      <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                         <Text style={sliderStyles.sliderLabel}>도둑 많음</Text>
                         <Text style={sliderStyles.sliderLabel}>경찰 많음</Text>
                       </View>
@@ -396,7 +402,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                 })()}
               </View>
 
-              <View style={{width: '100%'}}>
+              <View style={{ width: '100%' }}>
                 <PixelButton
                   text="APPLY"
                   variant="success"
@@ -423,9 +429,9 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                   }}
                 />
               </View>
-              <View style={{height: 6}} />
+              <View style={{ height: 6 }} />
               <Text style={styles.modalText}>
-                CURRENT: MODE {(settings?.gameMode || 'BASIC') === 'BASIC' ? 'BASIC' : 'ITEM'} / HIDE {settings?.hidingSeconds ?? 60}s / TOTAL {Math.round((settings?.chaseSeconds ?? 300) / 60)}m
+                CURRENT: MODE {(settings?.gameMode || 'BASIC') === 'BASIC' ? 'BASIC' : 'BATTLE'} / HIDE {settings?.hidingSeconds ?? 60}s / TOTAL {Math.round((settings?.chaseSeconds ?? 300) / 60)}m
               </Text>
               {(() => {
                 const currentRatio = settings?.policeRatio ?? 0.5;

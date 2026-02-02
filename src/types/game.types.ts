@@ -10,7 +10,7 @@ export interface Location {
 }
 
 export interface ThiefStatus {
-  state: 'FREE' | 'CAPTURED' | 'JAILED';
+  state: 'FREE' | 'CAPTURED' | 'JAILED' | 'OUT_OF_ZONE';
   capturedBy: string | null;
   capturedAt: number | null;
   jailedAt: number | null;
@@ -25,11 +25,13 @@ export interface Player {
   connected: boolean;
   thiefStatus: ThiefStatus | null;
   location?: Location | null;
+  /** BATTLE 모드: 자기장 밖 탈락 시각 (ms) */
+  outOfZoneAt?: number | null;
 }
 
 export interface RoomSettings {
   maxPlayers: number;
-  gameMode?: 'BASIC' | 'ITEM_FIND';
+  gameMode?: 'BASIC' | 'BATTLE';
   hidingSeconds: number;
   chaseSeconds: number;
   proximityRadiusMeters: number;

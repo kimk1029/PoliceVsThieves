@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useRef, useState} from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -12,17 +12,19 @@ import {
 } from 'react-native';
 import Geolocation from 'react-native-geolocation-service';
 import {
+  NaverMapCircleOverlay,
   NaverMapMarkerOverlay,
   NaverMapView,
   type NaverMapViewRef,
 } from '@mj-studio/react-native-naver-map';
-import {useGameStore} from '../store/useGameStore';
-import {usePlayerStore} from '../store/usePlayerStore';
-import {useGameLogic} from '../hooks/useGameLogic';
-import {PixelButton} from '../components/pixel/PixelButton';
-import {QRCodeView} from '../components/QRCodeView';
-import {logLocation} from '../utils/locationLog';
-import {QRScanModal} from './improvedLobby/QRScanModal';
+import { useGameStore } from '../store/useGameStore';
+import { getBattleZoneRadiusMeters } from '../utils/battleZone';
+import { usePlayerStore } from '../store/usePlayerStore';
+import { useGameLogic } from '../hooks/useGameLogic';
+import { PixelButton } from '../components/pixel/PixelButton';
+import { QRCodeView } from '../components/QRCodeView';
+import { logLocation } from '../utils/locationLog';
+import { QRScanModal } from './improvedLobby/QRScanModal';
 
 interface GameScreenProps {
   gameLogic: ReturnType<typeof useGameLogic>;
@@ -41,7 +43,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 }) => {
   const mapRef = useRef<NaverMapViewRef>(null);
   const hasCenteredOnceRef = useRef(false);
-  const lastCameraCoordRef = useRef<{latitude: number; longitude: number} | null>(null);
+  const lastCameraCoordRef = useRef<{ latitude: number; longitude: number } | null>(null);
   const startedTrackingRef = useRef(false);
   const lastCameraAtRef = useRef(0);
   const fallbackIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -53,9 +55,20 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     zoom: number;
     animationDuration?: number;
   } | null>(null);
-  const {team, location, playerId, nickname} = usePlayerStore();
-  const {status, players} = useGameStore();
+  const { team, location, playerId, nickname } = usePlayerStore();
+  const { status, players, basecamp, settings, phaseEndsAt } = useGameStore();
   const playersList = Array.from(players.values());
+
+  // 베이스캠프(시작 위치): 유효한 좌표일 때만 지도에 표시
+  const basecampCoord =
+    basecamp &&
+      typeof basecamp.lat === 'number' &&
+      typeof basecamp.lng === 'number' &&
+      isFinite(basecamp.lat) &&
+      isFinite(basecamp.lng) &&
+      (basecamp.lat !== 0 || basecamp.lng !== 0)
+      ? { latitude: basecamp.lat, longitude: basecamp.lng }
+      : null;
 
   const [qrScannerVisible, setQrScannerVisible] = useState(false);
   const [qrScannerSession, setQrScannerSession] = useState(0);
@@ -112,7 +125,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       smoothPositionsRef.current.forEach((pos) => {
         if (!pos.anim) return;
 
-        const {startLat, startLng, endLat, endLng, startTime, duration} = pos.anim;
+        const { startLat, startLng, endLat, endLng, startTime, duration } = pos.anim;
         const elapsed = now - startTime;
         let progress = elapsed / duration;
 
@@ -154,7 +167,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   }, [startSmoothAnimation, stopSmoothAnimation]);
 
   const setSmoothTarget = useCallback(
-    (id: string, target: {latitude: number; longitude: number}, duration = 350) => {
+    (id: string, target: { latitude: number; longitude: number }, duration = 350) => {
       const existing = smoothPositionsRef.current.get(id);
       if (!existing) {
         smoothPositionsRef.current.set(id, {
@@ -191,10 +204,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   );
 
   const getSmoothCoord = useCallback(
-    (id: string, fallback: {latitude: number; longitude: number}) => {
+    (id: string, fallback: { latitude: number; longitude: number }) => {
       const smooth = smoothPositionsRef.current.get(id);
       if (smooth) {
-        return {latitude: smooth.lat, longitude: smooth.lng};
+        return { latitude: smooth.lat, longitude: smooth.lng };
       }
       return fallback;
     },
@@ -203,7 +216,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   const upsertSmoothPosition = useCallback(
     (id: string, lat: number, lng: number) => {
-      setSmoothTarget(id, {latitude: lat, longitude: lng});
+      setSmoothTarget(id, { latitude: lat, longitude: lng });
     },
     [setSmoothTarget],
   );
@@ -211,11 +224,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // 내 위치 좌표
   const myLocationCoord =
     location && typeof location.lat === 'number' && typeof location.lng === 'number'
-      ? {latitude: location.lat, longitude: location.lng}
+      ? { latitude: location.lat, longitude: location.lng }
       : gameLogic.myLocation &&
-          typeof gameLogic.myLocation.lat === 'number' &&
-          typeof gameLogic.myLocation.lng === 'number'
-        ? {latitude: gameLogic.myLocation.lat, longitude: gameLogic.myLocation.lng}
+        typeof gameLogic.myLocation.lat === 'number' &&
+        typeof gameLogic.myLocation.lng === 'number'
+        ? { latitude: gameLogic.myLocation.lat, longitude: gameLogic.myLocation.lng }
         : null;
 
   const requestFallbackLocation = useCallback(() => {
@@ -304,6 +317,16 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     ? Math.max(0, Math.ceil((gameEndsAt - now) / 1000))
     : 0;
 
+  // BATTLE 모드 자기장: 베이스캠프 중심 원형, CHASE 단계에서만 표시, 시간에 따라 축소
+  const battleZoneRadius =
+    status === 'CHASE' &&
+      settings?.gameMode === 'BATTLE' &&
+      basecampCoord &&
+      phaseEndsAt != null &&
+      settings?.chaseSeconds
+      ? getBattleZoneRadiusMeters(phaseEndsAt, settings.chaseSeconds, now)
+      : null;
+
   // 플레이어 분류
   const thieves = playersList.filter((p: any) => p.team === 'THIEF');
   const polices = playersList.filter((p: any) => p.team === 'POLICE');
@@ -313,55 +336,55 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // 경찰 화면: 도둑 위치
   const policeVisibleThiefCoords = isPolice
     ? thieves
-        .filter((t: any) => {
-          const loc = t.location;
-          return loc && typeof loc.lat === 'number' && typeof loc.lng === 'number';
-        })
-        .map((t: any) => ({
-          playerId: t.playerId,
-          latitude: t.location.lat,
-          longitude: t.location.lng,
-          state: t.thiefStatus?.state || 'FREE',
-        }))
+      .filter((t: any) => {
+        const loc = t.location;
+        return loc && typeof loc.lat === 'number' && typeof loc.lng === 'number';
+      })
+      .map((t: any) => ({
+        playerId: t.playerId,
+        latitude: t.location.lat,
+        longitude: t.location.lng,
+        state: t.thiefStatus?.state || 'FREE',
+      }))
     : [];
 
   // 경찰 화면: 경찰 위치 (본인 제외)
   const policeVisiblePoliceCoords = isPolice
     ? polices
-        .filter((p: any) => {
-          const loc = p.location;
-          return (
-            p.playerId !== playerId &&
-            loc &&
-            typeof loc.lat === 'number' &&
-            typeof loc.lng === 'number'
-          );
-        })
-        .map((p: any) => ({
-          playerId: p.playerId,
-          latitude: p.location.lat,
-          longitude: p.location.lng,
-        }))
+      .filter((p: any) => {
+        const loc = p.location;
+        return (
+          p.playerId !== playerId &&
+          loc &&
+          typeof loc.lat === 'number' &&
+          typeof loc.lng === 'number'
+        );
+      })
+      .map((p: any) => ({
+        playerId: p.playerId,
+        latitude: p.location.lat,
+        longitude: p.location.lng,
+      }))
     : [];
 
   // 도둑 화면: 다른 도둑 위치 (본인 제외)
   const otherThiefCoords = !isPolice
     ? thieves
-        .filter((t: any) => {
-          const loc = t.location;
-          return (
-            t.playerId !== playerId &&
-            loc &&
-            typeof loc.lat === 'number' &&
-            typeof loc.lng === 'number'
-          );
-        })
-        .map((t: any) => ({
-          playerId: t.playerId,
-          latitude: t.location.lat,
-          longitude: t.location.lng,
-          state: t.thiefStatus?.state || 'FREE',
-        }))
+      .filter((t: any) => {
+        const loc = t.location;
+        return (
+          t.playerId !== playerId &&
+          loc &&
+          typeof loc.lat === 'number' &&
+          typeof loc.lng === 'number'
+        );
+      })
+      .map((t: any) => ({
+        playerId: t.playerId,
+        latitude: t.location.lat,
+        longitude: t.location.lng,
+        state: t.thiefStatus?.state || 'FREE',
+      }))
     : [];
 
   // 다른 플레이어 위치 업데이트
@@ -506,7 +529,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                   isUseTextureViewAndroid={true}
                   onInitialized={() => setMapReady(true)}
                   camera={camera ?? undefined}
-                  initialCamera={{latitude: 37.5665, longitude: 126.978, zoom: 15}}
+                  initialCamera={{ latitude: 37.5665, longitude: 126.978, zoom: 15 }}
                 >
                   {smoothMyCoordVal ? (
                     <NaverMapMarkerOverlay
@@ -515,7 +538,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                       longitude={smoothMyCoordVal.longitude}
                       width={25}
                       height={25}
-                      anchor={{x: 0.5, y: 1}}
+                      anchor={{ x: 0.5, y: 1 }}
                     >
                       <View collapsable={false} style={styles.policeMarkerIcon}>
                         <Text style={styles.markerEmoji}>👮</Text>
@@ -528,8 +551,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                     const borderColor = isCaptured
                       ? '#666'
                       : isJailed
-                      ? '#FFAA00'
-                      : '#F9F871';
+                        ? '#FFAA00'
+                        : '#F9F871';
                     const smoothCoord = getSmoothCoord(`player-${thief.playerId}`, {
                       latitude: thief.latitude,
                       longitude: thief.longitude,
@@ -542,13 +565,13 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                         longitude={smoothCoord.longitude}
                         width={25}
                         height={25}
-                        anchor={{x: 0.5, y: 1}}
+                        anchor={{ x: 0.5, y: 1 }}
                       >
                         <View
                           collapsable={false}
                           style={[
                             styles.thiefMarkerIcon,
-                            {borderColor},
+                            { borderColor },
                             isCaptured && styles.thiefMarkerIconCaptured,
                           ]}
                         >
@@ -576,7 +599,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                         longitude={smoothCoord.longitude}
                         width={25}
                         height={25}
-                        anchor={{x: 0.5, y: 1}}
+                        anchor={{ x: 0.5, y: 1 }}
                       >
                         <View collapsable={false} style={styles.policeMarkerIcon}>
                           <Text style={styles.markerEmoji}>👮</Text>
@@ -584,6 +607,31 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                       </NaverMapMarkerOverlay>
                     );
                   })}
+                  {basecampCoord ? (
+                    <NaverMapMarkerOverlay
+                      key="marker-basecamp"
+                      latitude={basecampCoord.latitude}
+                      longitude={basecampCoord.longitude}
+                      width={28}
+                      height={28}
+                      anchor={{ x: 0.5, y: 1 }}
+                    >
+                      <View collapsable={false} style={styles.basecampMarkerIcon}>
+                        <Text style={styles.basecampMarkerEmoji}>⛺</Text>
+                      </View>
+                    </NaverMapMarkerOverlay>
+                  ) : null}
+                  {basecampCoord && battleZoneRadius != null ? (
+                    <NaverMapCircleOverlay
+                      key="battle-zone"
+                      latitude={basecampCoord.latitude}
+                      longitude={basecampCoord.longitude}
+                      radius={battleZoneRadius}
+                      color="rgba(0, 120, 255, 0.25)"
+                      outlineWidth={2}
+                      outlineColor="rgba(0, 150, 255, 0.6)"
+                    />
+                  ) : null}
                 </NaverMapView>
               ) : (
                 <View style={styles.mapFallback}>
@@ -603,14 +651,18 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                     const isFree = t.thiefStatus?.state === 'FREE';
                     const isCaptured = t.thiefStatus?.state === 'CAPTURED';
                     const isJailed = t.thiefStatus?.state === 'JAILED';
+                    const isOutOfZone =
+                      t.thiefStatus?.state === 'OUT_OF_ZONE' || !!(t as any).outOfZoneAt;
                     const canCapture = status === 'CHASE' && isFree && !isPoliceHiding;
                     const canRelease = status === 'CHASE' && isCaptured && !isPoliceHiding;
                     const canAction = canCapture || canRelease;
                     const label = isCaptured
                       ? '검거됨'
                       : isJailed
-                      ? '감금됨'
-                      : '자유';
+                        ? '감금됨'
+                        : isOutOfZone
+                          ? '탈락'
+                          : '자유';
                     return (
                       <TouchableOpacity
                         key={t.playerId}
@@ -640,7 +692,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                             styles.listItemBadge,
                             t.thiefStatus?.state === 'CAPTURED' && styles.listItemBadgeCaptured,
                             t.thiefStatus?.state === 'JAILED' && styles.listItemBadgeJailed,
-                            t.thiefStatus?.state === 'FREE' && styles.listItemBadgeFree,
+                            (t.thiefStatus?.state === 'OUT_OF_ZONE' || (t as any).outOfZoneAt) &&
+                            styles.listItemBadgeOutOfZone,
+                            t.thiefStatus?.state === 'FREE' &&
+                            !(t as any).outOfZoneAt &&
+                            styles.listItemBadgeFree,
                           ]}
                         >
                           {label}
@@ -688,7 +744,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                     isUseTextureViewAndroid={true}
                     onInitialized={() => setMapReady(true)}
                     camera={camera ?? undefined}
-                    initialCamera={{latitude: 37.5665, longitude: 126.978, zoom: 13}}
+                    initialCamera={{ latitude: 37.5665, longitude: 126.978, zoom: 13 }}
                   >
                     {smoothMyCoordVal ? (
                       <NaverMapMarkerOverlay
@@ -697,7 +753,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                         longitude={smoothMyCoordVal.longitude}
                         width={25}
                         height={25}
-                        anchor={{x: 0.5, y: 1}}
+                        anchor={{ x: 0.5, y: 1 }}
                       >
                         <View collapsable={false} style={styles.thiefMarkerIcon}>
                           <Text style={styles.markerEmoji}>🦹</Text>
@@ -710,8 +766,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                       const borderColor = isCaptured
                         ? '#666'
                         : isJailed
-                        ? '#FFAA00'
-                        : '#F9F871';
+                          ? '#FFAA00'
+                          : '#F9F871';
                       const smoothCoord = getSmoothCoord(`player-${thief.playerId}`, {
                         latitude: thief.latitude,
                         longitude: thief.longitude,
@@ -724,13 +780,13 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                           longitude={smoothCoord.longitude}
                           width={25}
                           height={25}
-                          anchor={{x: 0.5, y: 1}}
+                          anchor={{ x: 0.5, y: 1 }}
                         >
                           <View
                             collapsable={false}
                             style={[
                               styles.thiefMarkerIcon,
-                              {borderColor},
+                              { borderColor },
                               isCaptured && styles.thiefMarkerIconCaptured,
                             ]}
                           >
@@ -746,6 +802,31 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                         </NaverMapMarkerOverlay>
                       );
                     })}
+                    {basecampCoord ? (
+                      <NaverMapMarkerOverlay
+                        key="marker-basecamp"
+                        latitude={basecampCoord.latitude}
+                        longitude={basecampCoord.longitude}
+                        width={28}
+                        height={28}
+                        anchor={{ x: 0.5, y: 1 }}
+                      >
+                        <View collapsable={false} style={styles.basecampMarkerIcon}>
+                          <Text style={styles.basecampMarkerEmoji}>⛺</Text>
+                        </View>
+                      </NaverMapMarkerOverlay>
+                    ) : null}
+                    {basecampCoord && battleZoneRadius != null ? (
+                      <NaverMapCircleOverlay
+                        key="battle-zone"
+                        latitude={basecampCoord.latitude}
+                        longitude={basecampCoord.longitude}
+                        radius={battleZoneRadius}
+                        color="rgba(0, 120, 255, 0.25)"
+                        outlineWidth={2}
+                        outlineColor="rgba(0, 150, 255, 0.6)"
+                      />
+                    ) : null}
                   </NaverMapView>
                 ) : (
                   <View style={styles.mapFallback}>
@@ -782,12 +863,16 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                 <View style={styles.thievesListContainer}>
                   {thieves.map((t: any) => {
                     const isCaptured = t.thiefStatus?.state === 'CAPTURED';
+                    const isOutOfZone =
+                      t.thiefStatus?.state === 'OUT_OF_ZONE' || !!(t as any).outOfZoneAt;
                     const label =
                       t.thiefStatus?.state === 'CAPTURED'
                         ? '검거됨'
                         : t.thiefStatus?.state === 'JAILED'
-                        ? '감금됨'
-                        : '자유';
+                          ? '감금됨'
+                          : isOutOfZone
+                            ? '탈락'
+                            : '자유';
                     const isMe = t.playerId === playerId;
                     return (
                       <View
@@ -813,7 +898,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                             styles.listItemBadge,
                             t.thiefStatus?.state === 'CAPTURED' && styles.listItemBadgeCaptured,
                             t.thiefStatus?.state === 'JAILED' && styles.listItemBadgeJailed,
-                            t.thiefStatus?.state === 'FREE' && styles.listItemBadgeFree,
+                            (t.thiefStatus?.state === 'OUT_OF_ZONE' || (t as any).outOfZoneAt) &&
+                            styles.listItemBadgeOutOfZone,
+                            t.thiefStatus?.state === 'FREE' &&
+                            !(t as any).outOfZoneAt &&
+                            styles.listItemBadgeFree,
                           ]}
                         >
                           {label}
@@ -868,9 +957,12 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
       {showHidingCountdown && (
         <View style={styles.countdownOverlay}>
-          <Animated.View style={[styles.countdownBox, {transform: [{scale: pulse}]}]}>
-            <Text style={styles.countdownText}>{hidingRemainingSec}</Text>
-          </Animated.View>
+          <View style={styles.countdownContent}>
+            <Animated.View style={[styles.countdownBox, { transform: [{ scale: pulse }] }]}>
+              <Text style={styles.countdownText}>{hidingRemainingSec}</Text>
+            </Animated.View>
+            <Text style={styles.countdownSubtext}>도둑! 빨리 숨고 도망가세요!</Text>
+          </View>
         </View>
       )}
     </SafeAreaView>
@@ -1042,6 +1134,9 @@ const styles = StyleSheet.create({
   listItemBadgeJailed: {
     color: '#FFAA00',
   },
+  listItemBadgeOutOfZone: {
+    color: '#FF5555',
+  },
   listHint: {
     color: '#00E5FF',
     fontSize: 10,
@@ -1105,7 +1200,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
-    shadowOffset: {width: 3, height: 3},
+    shadowOffset: { width: 3, height: 3 },
     shadowOpacity: 0.5,
     shadowRadius: 0,
     elevation: 4,
@@ -1114,7 +1209,7 @@ const styles = StyleSheet.create({
     fontSize: 30,
     color: '#fff',
     textShadowColor: '#000',
-    textShadowOffset: {width: 2, height: 2},
+    textShadowOffset: { width: 2, height: 2 },
     textShadowRadius: 0,
   },
   pttButtonText: {
@@ -1160,6 +1255,20 @@ const styles = StyleSheet.create({
     zIndex: 1000,
     elevation: 10,
   },
+  countdownContent: {
+    alignItems: 'center',
+  },
+  countdownSubtext: {
+    marginTop: 16,
+    color: '#F9F871',
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+    textShadowColor: '#FF0055',
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 0,
+  },
   countdownBox: {
     backgroundColor: '#000',
     borderWidth: 4,
@@ -1175,7 +1284,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
     textShadowColor: '#FF0055',
-    textShadowOffset: {width: 6, height: 6},
+    textShadowOffset: { width: 6, height: 6 },
     textShadowRadius: 0,
     letterSpacing: 2,
   },
@@ -1206,5 +1315,19 @@ const styles = StyleSheet.create({
   },
   markerEmojiCaptured: {
     opacity: 0.5,
+  },
+  basecampMarkerIcon: {
+    width: 24,
+    height: 24,
+    backgroundColor: '#2D7D46',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#FFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  basecampMarkerEmoji: {
+    fontSize: 14,
+    color: '#FFF',
   },
 });
