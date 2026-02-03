@@ -318,10 +318,10 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                 </View>
                 <View style={{ flex: 1, marginLeft: 6 }}>
                   <PixelButton
-                    text="ITEM"
-                    variant={gameModeDraft === 'ITEM_FIND' ? 'success' : 'secondary'}
+                    text="BATTLE"
+                    variant={gameModeDraft === 'BATTLE' ? 'success' : 'secondary'}
                     size="small"
-                    onPress={() => setGameModeDraft('ITEM_FIND')}
+                    onPress={() => setGameModeDraft('BATTLE')}
                   />
                 </View>
               </View>
@@ -370,17 +370,23 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                 </View>
               </View>
 
-              {/* Team Ratio Slider */}
+              {/* Team Ratio Slider - 전체 100%, 기본 50%:50% */}
               <View style={{ width: '100%', marginBottom: 16 }}>
                 {(() => {
+                  const total = Math.max(2, playersList.length);
                   const { police, thief } = calculateTeamDistribution(
                     policeRatioDraft,
-                    playersList.length || 2,
+                    total,
                   );
+                  const policePct = Math.round(policeRatioDraft * 100);
+                  const thiefPct = 100 - policePct;
                   return (
                     <>
-                      <Text style={[styles.modalText, { marginBottom: 8 }]}>
-                        TEAM RATIO: 경찰 {police} : 도둑 {thief}
+                      <Text style={[styles.modalText, { marginBottom: 4 }]}>
+                        TEAM RATIO: 경찰 {policePct}% : 도둑 {thiefPct}%
+                      </Text>
+                      <Text style={[styles.modalText, { marginBottom: 8, fontSize: 12, opacity: 0.9 }]}>
+                        (현재 인원 기준: 경찰 {police}명 : 도둑 {thief}명)
                       </Text>
                       <Slider
                         style={{ width: '100%', height: 40 }}
@@ -394,8 +400,8 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                         thumbTintColor="#FFFF00"
                       />
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                        <Text style={sliderStyles.sliderLabel}>도둑 많음</Text>
-                        <Text style={sliderStyles.sliderLabel}>경찰 많음</Text>
+                        <Text style={sliderStyles.sliderLabel}>도둑 많음 (0%)</Text>
+                        <Text style={sliderStyles.sliderLabel}>경찰 많음 (100%)</Text>
                       </View>
                     </>
                   );
@@ -435,13 +441,13 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
               </Text>
               {(() => {
                 const currentRatio = settings?.policeRatio ?? 0.5;
-                const { police, thief } = calculateTeamDistribution(
-                  currentRatio,
-                  playersList.length || 2,
-                );
+                const total = Math.max(2, playersList.length);
+                const { police, thief } = calculateTeamDistribution(currentRatio, total);
+                const policePct = Math.round(currentRatio * 100);
+                const thiefPct = 100 - policePct;
                 return (
                   <Text style={styles.modalText}>
-                    RATIO: 경찰 {police} : 도둑 {thief} (셔플 버튼으로 적용)
+                    RATIO: 경찰 {policePct}% : 도둑 {thiefPct}% (경찰 {police}명 : 도둑 {thief}명)
                   </Text>
                 );
               })()}

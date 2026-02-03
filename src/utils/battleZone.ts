@@ -1,7 +1,7 @@
-/** 서버와 동일: Chase 시간의 70%가 지나면 축소 시작, 남은 30% 동안 1000m → 100m */
+/** 서버와 동일: 총 게임 시간의 40%가 지나면 축소 시작, 남은 60% 동안 1000m → 100m */
 const BATTLE_ZONE_INITIAL_RADIUS_M = 1000;
 const BATTLE_ZONE_MIN_RADIUS_M = 100;
-const SHRINK_START_ELAPSED_RATIO = 0.7;
+const SHRINK_START_ELAPSED_RATIO = 0.4;
 
 /**
  * BATTLE 모드: 현재 자기장 반경(m). phaseEndsAt(chase 종료 시각), chaseSeconds(초), now(현재 시각 ms).

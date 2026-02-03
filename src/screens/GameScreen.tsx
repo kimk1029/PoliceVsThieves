@@ -306,10 +306,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     }
   }, [myLocationCoord, upsertSmoothPosition, isPolice]);
 
-  // 게임 총시간 타이머
+  // 게임 총시간 타이머 (BATTLE 자기장 부드러운 축소를 위해 100ms 간격)
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 250);
+    const id = setInterval(() => setNow(Date.now()), 100);
     return () => clearInterval(id);
   }, []);
 
@@ -612,12 +612,12 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                       key="marker-basecamp"
                       latitude={basecampCoord.latitude}
                       longitude={basecampCoord.longitude}
-                      width={28}
+                      width={56}
                       height={28}
                       anchor={{ x: 0.5, y: 1 }}
                     >
                       <View collapsable={false} style={styles.basecampMarkerIcon}>
-                        <Text style={styles.basecampMarkerEmoji}>⛺</Text>
+                        <Text style={styles.basecampMarkerEmoji}>베이스캠프</Text>
                       </View>
                     </NaverMapMarkerOverlay>
                   ) : null}
@@ -807,12 +807,12 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                         key="marker-basecamp"
                         latitude={basecampCoord.latitude}
                         longitude={basecampCoord.longitude}
-                        width={28}
+                        width={56}
                         height={28}
                         anchor={{ x: 0.5, y: 1 }}
                       >
                         <View collapsable={false} style={styles.basecampMarkerIcon}>
-                          <Text style={styles.basecampMarkerEmoji}>⛺</Text>
+                          <Text style={styles.basecampMarkerEmoji}>베이스캠프</Text>
                         </View>
                       </NaverMapMarkerOverlay>
                     ) : null}
@@ -961,7 +961,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             <Animated.View style={[styles.countdownBox, { transform: [{ scale: pulse }] }]}>
               <Text style={styles.countdownText}>{hidingRemainingSec}</Text>
             </Animated.View>
-            <Text style={styles.countdownSubtext}>도둑! 빨리 숨고 도망가세요!</Text>
+            <Text style={styles.countdownSubtext}>
+              {isPolice
+                ? '경찰은 도둑이 숨을때 까지 대기해주세요!'
+                : '도둑! 빨리 숨고 도망가세요!'}
+            </Text>
           </View>
         </View>
       )}
@@ -1317,17 +1321,20 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   basecampMarkerIcon: {
-    width: 24,
-    height: 24,
+    width: 32,
+    minHeight: 28,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
     backgroundColor: '#2D7D46',
-    borderRadius: 12,
+    borderRadius: 2,
     borderWidth: 2,
     borderColor: '#FFF',
     justifyContent: 'center',
     alignItems: 'center',
   },
   basecampMarkerEmoji: {
-    fontSize: 14,
+    fontSize: 10,
     color: '#FFF',
+    fontWeight: '700',
   },
 });
