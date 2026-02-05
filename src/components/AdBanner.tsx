@@ -1,146 +1,114 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
+import { AD_UNIT_IDS } from '../config/adConfig';
 
 interface AdBannerProps {
   style?: any;
 }
 
+// Google 공식 배너 테스트 ID (ANCHORED_ADAPTIVE_BANNER용)
+const FALLBACK_BANNER_TEST_ID = 'ca-app-pub-3940256099942544/6300978111';
+
 /**
  * 배너 광고 컴포넌트
- * 메인 화면 하단에 표시되는 광고
+ * 메인 화면 하단에 표시되는 광고 (테스트/실제 모두 adConfig 및 TestIds 사용)
  * 크래시 방지를 위해 모든 에러를 처리하고 안전하게 렌더링
  */
 export const AdBanner: React.FC<AdBannerProps> = ({ style }) => {
   const [isReady, setIsReady] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const mountedRef = useRef(true);
   const adModuleRef = useRef<any>(null);
 
   useEffect(() => {
     mountedRef.current = true;
-    
+    setLoadError(null);
+
     const loadAdMob = async () => {
-      // 모든 에러를 catch하여 앱이 크래시하지 않도록 함
       try {
-        // 충분한 지연을 두어 앱이 완전히 로드된 후 AdMob 초기화
-        await new Promise(resolve => setTimeout(resolve, 4000));
-        
+        // 앱 UI가 그려진 뒤 짧게 대기 (너무 길면 사용자가 메인을 벗어날 수 있음)
+        await new Promise(resolve => setTimeout(resolve, 800));
+
         if (!mountedRef.current) return;
-        
-        // AdMob 모듈을 동적으로 로드
+
         let mobileAdsModule: any;
         try {
           mobileAdsModule = require('react-native-google-mobile-ads');
-        } catch (requireError) {
-          console.warn('[AdBanner] Failed to require AdMob module:', requireError);
+        } catch (requireError: any) {
+          console.warn('[AdBanner] Failed to require AdMob module:', requireError?.message ?? requireError);
+          setLoadError('MODULE_LOAD_FAIL');
           return;
         }
-        
+
         if (!mountedRef.current) return;
-        
-        if (!mobileAdsModule) {
-          console.warn('[AdBanner] AdMob module is null');
+        if (!mobileAdsModule?.BannerAd || !mobileAdsModule?.BannerAdSize) {
+          console.warn('[AdBanner] BannerAd or BannerAdSize not found');
+          setLoadError('NO_BANNER_EXPORT');
           return;
         }
-        
-        // BannerAd 컴포넌트 확인
-        if (!mobileAdsModule.BannerAd) {
-          console.warn('[AdBanner] BannerAd component not found in module');
-          return;
-        }
-        
-        // BannerAdSize 확인
-        if (!mobileAdsModule.BannerAdSize) {
-          console.warn('[AdBanner] BannerAdSize not found in module');
-          return;
-        }
-        
-        if (!mountedRef.current) return;
-        
-        // AdMob 초기화 시도 (실패해도 계속 진행)
+
+        // AdMob SDK 초기화 (v16: default가 함수, .initialize() 반환)
         try {
           const mobileAds = mobileAdsModule.default;
           if (mobileAds && typeof mobileAds === 'function') {
             const initPromise = mobileAds().initialize();
-            if (initPromise && typeof initPromise.then === 'function') {
-              await initPromise.catch((initError: any) => {
-                console.warn('[AdBanner] AdMob initialization error (non-fatal):', initError);
-              });
+            if (initPromise?.then) {
+              await initPromise;
             }
           }
-        } catch (initError) {
-          console.warn('[AdBanner] AdMob initialization exception (non-fatal):', initError);
-          // 초기화 실패해도 계속 진행
+        } catch (initError: any) {
+          console.warn('[AdBanner] AdMob init (non-fatal):', initError?.message ?? initError);
         }
-        
+
         if (!mountedRef.current) return;
-        
-        // 모듈을 ref에 저장
+
         adModuleRef.current = mobileAdsModule;
-        
-        if (!mountedRef.current) return;
-        
         setIsReady(true);
-        console.log('[AdBanner] AdMob ready for rendering');
-      } catch (error) {
-        console.warn('[AdBanner] Unexpected error loading AdMob:', error);
-        // 모든 에러를 catch하여 앱이 크래시하지 않도록 함
+        console.log('[AdBanner] AdMob ready, rendering banner');
+      } catch (error: any) {
+        console.warn('[AdBanner] Unexpected error:', error?.message ?? error);
+        setLoadError('INIT_ERROR');
       }
     };
-    
+
     loadAdMob();
-    
-    return () => {
-      mountedRef.current = false;
-    };
+    return () => { mountedRef.current = false; };
   }, []);
 
-  // 준비되지 않았으면 아무것도 렌더링하지 않음
   if (!isReady || !adModuleRef.current) {
-    return null;
+    // 로딩 중 자리 확보 (레이아웃 시프트 방지), 디버그 시 loadError 표시 가능
+    return (
+      <View style={[styles.container, styles.placeholder, style]}>
+        {__DEV__ && loadError ? null : null}
+      </View>
+    );
   }
 
-  // 에러가 발생해도 크래시하지 않도록 완전히 감싸기
   try {
     const { BannerAd, BannerAdSize, TestIds } = adModuleRef.current;
-    
-    if (!BannerAd || !BannerAdSize) {
-      console.warn('[AdBanner] BannerAd or BannerAdSize is missing');
-      return null;
-    }
-    
-    const rawTestAdUnitId = TestIds?.BANNER || 'ca-app-pub-3940256099942544/6300978111';
-    const testAdUnitId = String(rawTestAdUnitId).trim();
-    if (testAdUnitId !== String(rawTestAdUnitId)) {
-      console.warn('[AdBanner] Test ad unit id had whitespace, trimmed.');
-    }
-    
-    // BannerAd가 React 컴포넌트인지 확인
-    if (typeof BannerAd !== 'function' && typeof BannerAd !== 'object') {
-      console.warn('[AdBanner] BannerAd is not a valid React component');
-      return null;
-    }
-    
+    const testId =
+      TestIds?.ADAPTIVE_BANNER ?? TestIds?.BANNER ?? AD_UNIT_IDS.BANNER_TEST ?? FALLBACK_BANNER_TEST_ID;
+    const unitId = String(testId).trim();
+
     return (
       <View style={[styles.container, style]}>
         <BannerAd
-          unitId={testAdUnitId}
+          unitId={unitId}
           size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
-          requestOptions={{
-            requestNonPersonalizedAdsOnly: true,
-          }}
           onAdLoaded={() => {
-            console.log('[AdBanner] Test ad loaded successfully');
+            console.log('[AdBanner] Banner ad loaded');
           }}
           onAdFailedToLoad={(error: any) => {
-            console.warn('[AdBanner] Ad failed to load:', error);
+            const code = error?.code ?? error?.nativeEvent?.code;
+            const msg = error?.message ?? error?.nativeEvent?.message ?? String(error);
+            console.warn('[AdBanner] Ad failed to load:', { code, message: msg });
           }}
         />
       </View>
     );
-  } catch (error) {
-    console.warn('[AdBanner] Error rendering ad component:', error);
-    // 에러가 발생해도 null을 반환하여 크래시 방지
-    return null;
+  } catch (error: any) {
+    console.warn('[AdBanner] Render error:', error?.message ?? error);
+    return <View style={[styles.container, styles.placeholder, style]} />;
   }
 };
 
@@ -151,12 +119,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'transparent',
     ...Platform.select({
-      ios: {
-        paddingBottom: 0,
-      },
-      android: {
-        paddingBottom: 0,
-      },
+      ios: { paddingBottom: 0 },
+      android: { paddingBottom: 0 },
     }),
+  },
+  placeholder: {
+    minHeight: 50,
   },
 });

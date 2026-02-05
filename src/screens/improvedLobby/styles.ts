@@ -1,4 +1,4 @@
-import {Dimensions, Platform, StyleSheet} from 'react-native';
+import { Dimensions, Platform, StyleSheet } from 'react-native';
 
 export const {width} = Dimensions.get('window');
 
@@ -55,10 +55,17 @@ export const styles = StyleSheet.create({
     letterSpacing: 2,
     fontWeight: 'bold',
   },
-  statusBar: {
+  topBarRow: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 8 : 12,
     left: 8,
+    right: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  statusBar: {
     borderWidth: 1,
     backgroundColor: 'rgba(0,0,0,0.7)',
     paddingHorizontal: 8,
@@ -66,7 +73,22 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     borderColor: '#555',
     borderRadius: 4,
-    zIndex: 10,
+  },
+  helpButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    borderWidth: 1,
+    borderColor: '#FF0055',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  helpButtonText: {
+    color: '#FF0055',
+    fontSize: 18,
+    fontWeight: 'bold',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
   statusText: {
     fontSize: 10,
@@ -93,13 +115,28 @@ export const styles = StyleSheet.create({
     paddingBottom: Platform.OS === 'ios' ? 6 : 8,
   },
   lobbyHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'column',
     backgroundColor: '#000',
     padding: 12,
     borderBottomWidth: 4,
     borderBottomColor: '#FF0055',
+  },
+  headerTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  headerGameInfo: {
+    marginTop: 8,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,0,85,0.4)',
+  },
+  gameInfoText: {
+    fontSize: 10,
+    color: '#AAA',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    letterSpacing: 0.5,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -361,6 +398,30 @@ export const styles = StyleSheet.create({
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     color: '#000',
     textAlign: 'center',
+  },
+  helpModal: {
+    maxHeight: '80%',
+  },
+  helpScroll: {
+    maxHeight: 400,
+  },
+  helpScrollContent: {
+    padding: 20,
+    paddingBottom: 24,
+  },
+  helpSectionTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    color: '#000',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  helpBody: {
+    fontSize: 12,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    color: '#333',
+    lineHeight: 20,
   },
 });
 

@@ -53,10 +53,10 @@ export class LocationService {
         },
         {
           enableHighAccuracy: true,
-          timeout: 20000,
-          maximumAge: 2000,
+          timeout: 25000,
+          maximumAge: 0,
           forceRequestLocation: true,
-          showLocationDialog: true
+          showLocationDialog: true,
         }
       );
     });
@@ -84,13 +84,12 @@ export class LocationService {
       },
       {
         enableHighAccuracy: true,
-        // distanceFilter를 0으로 설정하여 모든 위치 변경을 실시간으로 받음
-        // (1미터 이상 이동 시 업데이트, 부드러운 지도 추적)
         distanceFilter: 0,
         interval: intervalMs,
-        fastestInterval: intervalMs / 2,
+        fastestInterval: Math.max(1000, intervalMs / 2),
+        maximumAge: 0,
         forceRequestLocation: true,
-        showLocationDialog: true
+        showLocationDialog: true,
       }
     );
   }

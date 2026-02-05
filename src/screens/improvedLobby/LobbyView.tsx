@@ -132,28 +132,35 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
       <StatusBar barStyle="light-content" backgroundColor="#120458" />
 
       <View style={styles.lobbyHeader}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.pixelLabel}>ROOM</Text>
-          <Text style={styles.pixelValue}>{roomId}</Text>
-        </View>
-        <View style={styles.headerRight}>
-          <View style={{ width: 60, marginRight: 6 }}>
-            <PixelButton text="QR" size="small" variant="secondary" onPress={() => setShowQR(true)} />
+        <View style={styles.headerTopRow}>
+          <View style={styles.headerLeft}>
+            <Text style={styles.pixelLabel}>ROOM</Text>
+            <Text style={styles.pixelValue}>{roomId}</Text>
           </View>
-          <View style={{ width: 60 }}>
-            <PixelButton text="COPY" size="small" variant="secondary" onPress={handleCopyRoomCode} />
-          </View>
-          {isHost && (
-            <View style={{ width: 60, marginLeft: 6 }}>
-              <PixelButton
-                text="⚙"
-                size="small"
-                variant="secondary"
-                onPress={openSettings}
-                textStyle={{ fontSize: 18 }}
-              />
+          <View style={styles.headerRight}>
+            <View style={{ width: 60, marginRight: 6 }}>
+              <PixelButton text="QR" size="small" variant="secondary" onPress={() => setShowQR(true)} />
             </View>
-          )}
+            <View style={{ width: 60 }}>
+              <PixelButton text="COPY" size="small" variant="secondary" onPress={handleCopyRoomCode} />
+            </View>
+            {isHost && (
+              <View style={{ width: 60, marginLeft: 6 }}>
+                <PixelButton
+                  text="⚙"
+                  size="small"
+                  variant="secondary"
+                  onPress={openSettings}
+                  textStyle={{ fontSize: 18 }}
+                />
+              </View>
+            )}
+          </View>
+        </View>
+        <View style={styles.headerGameInfo}>
+          <Text style={styles.gameInfoText} numberOfLines={1}>
+            MODE {settings?.gameMode === 'BATTLE' ? 'BATTLE' : 'BASIC'} · HIDE {settings?.hidingSeconds ?? 60}s · TOTAL {Math.round((settings?.chaseSeconds ?? 300) / 60)}m
+          </Text>
         </View>
       </View>
 

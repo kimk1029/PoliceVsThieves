@@ -8,6 +8,8 @@ import {
   Platform,
   SafeAreaView,
   useWindowDimensions,
+  ImageBackground,
+  ScrollView,
 } from 'react-native';
 import { Player, GameResult, RoomSettings } from '../types/game.types';
 
@@ -41,7 +43,7 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
   // =================================================================
   // [로직 유지] MVP 및 통계 계산 부분은 기존 코드와 동일합니다.
   // =================================================================
-  const { mvp, policeStats, thiefStats } = useMemo(() => {
+  const { mvpPolice, mvpThief, policeStats, thiefStats } = useMemo(() => {
     const pStats = new Map<string, { nickname: string; captureCount: number }>();
     const tStats = new Map<
       string,
@@ -87,14 +89,7 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
       }
     });
 
-    // MVP 선정
-    let mvpData: {
-      playerId: string;
-      nickname: string;
-      type: 'POLICE' | 'THIEF';
-      value: number;
-    } | null = null;
-
+    // MVP: 경찰 1명, 도둑 1명 각각 선정 (누구에게나 보여줌)
     const topPolice = Array.from(pStats.entries())
       .map(([id, stat]) => ({ playerId: id, ...stat, type: 'POLICE' as const }))
       .sort((a, b) => b.captureCount - a.captureCount)[0];
@@ -108,13 +103,21 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
       }))
       .sort((a, b) => b.survivalTime - a.survivalTime)[0];
 
-    if (winner === 'POLICE' && topPolice) {
-      mvpData = { ...topPolice, value: topPolice.captureCount };
-    } else if (winner === 'THIEF' && topThief) {
-      mvpData = { ...topThief, value: Math.floor(topThief.survivalTime / 1000) };
-    }
+    const mvpPolice =
+      topPolice != null
+        ? { ...topPolice, value: topPolice.captureCount }
+        : null;
+    const mvpThief =
+      topThief != null
+        ? { ...topThief, value: Math.floor(topThief.survivalTime / 1000) }
+        : null;
 
-    return { mvp: mvpData, policeStats: pStats, thiefStats: tStats };
+    return {
+      mvpPolice,
+      mvpThief,
+      policeStats: pStats,
+      thiefStats: tStats,
+    };
   }, [
     result,
     playersList,
@@ -122,7 +125,6 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
     settings,
     gameStartAt,
     gameEndsAt,
-    winner,
   ]);
 
   const formatTime = (ms: number) => {
@@ -139,140 +141,148 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
   const scale = Math.min(1, height / 820);
   const scaledWidth = Math.min(width, width / scale);
 
+  const thievesWinBg = require('../assets/images/thieves-win-bg.png');
+  const policeWinBg = require('../assets/images/police-win-bg.png');
+  const bgSource = winner === 'THIEF' ? thievesWinBg : policeWinBg;
+
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#120429" />
-      <View style={styles.resultBody}>
-        <View
-          style={[
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <ImageBackground
+        source={bgSource}
+        style={styles.resultBody}
+        resizeMode="cover"
+      >
+        <ScrollView
+          style={styles.scrollWrap}
+          contentContainerStyle={[
             styles.resultContent,
-            { transform: [{ scale }], width: scaledWidth },
-          ]}>
+            styles.resultContentBottom,
+            { paddingBottom: 24 },
+          ]}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* 배경에 GAME OVER / 우승 타이틀 있음 → 별도 배너 제거 */}
 
-          {/* Header Title */}
-          <Text style={styles.mainTitle}>GAME OVER</Text>
-
-          {/* 1. Winner Banner Section */}
-          <View
-            style={[
-              styles.pixelContainer,
-              styles.winnerBanner,
-              { borderColor: winnerThemeColor },
-            ]}>
-            <Text
-              style={[
-                styles.winnerTeamText,
-                { color: winnerThemeColor, textShadowColor: winnerThemeColor },
-              ]}>
-              {winnerLabel}
-            </Text>
-            {reason ? <Text style={styles.resultReason}>"{reason}"</Text> : null}
-          </View>
-
-          {/* 2. MVP Hero Section (가장 돋보이게 배치) */}
-          {mvp && (
-            <View style={[styles.pixelContainer, styles.mvpContainer]}>
-              <View style={styles.mvpHeaderBadge}>
-                <Text style={styles.mvpHeaderLabel}>⭐ MOST VALUABLE PLAYER ⭐</Text>
-              </View>
-              <Text style={styles.mvpNickname}>{mvp.nickname}</Text>
-              <Text
-                style={[
-                  styles.mvpStatValue,
-                  {
-                    color:
-                      mvp.type === 'POLICE' ? '#00E5FF' : '#FF0055',
-                  },
-                ]}>
-                {mvp.type === 'POLICE'
-                  ? `총 ${mvp.value}명 검거`
-                  : `총 ${mvp.value}초 생존`}
-              </Text>
+          {/* MVP 인포그래픽 카드 - 경찰/도둑 각 1명씩 모두 표시 */}
+          {(mvpPolice != null || mvpThief != null) && (
+            <View style={styles.mvpRow}>
+              {mvpPolice != null && (
+                <View
+                  style={[
+                    styles.mvpInfographic,
+                    styles.mvpInfographicHalf,
+                    { borderLeftColor: '#00E5FF' },
+                  ]}
+                >
+                  <View style={styles.mvpInfographicLeft}>
+                    <Text style={styles.mvpInfographicIcon}>👮</Text>
+                    <View style={styles.mvpInfographicLabelWrap}>
+                      <Text style={styles.mvpInfographicLabel}>MVP POLICE</Text>
+                      <Text style={styles.mvpInfographicName}>{mvpPolice.nickname}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.mvpInfographicRight}>
+                    <Text style={[styles.mvpInfographicValue, { color: '#00E5FF' }]}>
+                      {mvpPolice.value}
+                    </Text>
+                    <Text style={styles.mvpInfographicUnit}>명 검거</Text>
+                  </View>
+                </View>
+              )}
+              {mvpThief != null && (
+                <View
+                  style={[
+                    styles.mvpInfographic,
+                    styles.mvpInfographicHalf,
+                    { borderLeftColor: '#FF0055', marginLeft: mvpPolice != null ? 12 : 0 },
+                  ]}
+                >
+                  <View style={styles.mvpInfographicLeft}>
+                    <Text style={styles.mvpInfographicIcon}>🦹</Text>
+                    <View style={styles.mvpInfographicLabelWrap}>
+                      <Text style={styles.mvpInfographicLabel}>MVP THIEF</Text>
+                      <Text style={styles.mvpInfographicName}>{mvpThief.nickname}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.mvpInfographicRight}>
+                    <Text style={[styles.mvpInfographicValue, { color: '#FF0055' }]}>
+                      {mvpThief.value}
+                    </Text>
+                    <Text style={styles.mvpInfographicUnit}>초 생존</Text>
+                  </View>
+                </View>
+              )}
             </View>
           )}
 
-          {/* 3. Team Stats Scoreboards (오락실 랭킹 화면처럼 넓게 배치) */}
-          <View style={styles.statsSection}>
-
-            {/* 경찰 팀 스코어보드 */}
-            <View
-              style={[
-                styles.pixelContainer,
-                styles.scoreboardContainer,
-                { borderColor: '#00E5FF' },
-              ]}>
-              <Text style={[styles.scoreboardTitle, { color: '#00E5FF' }]}>
-                👮‍♂️ POLICE SQUAD
+          {/* 경찰 / 도둑 스쿼드 세로 반반 (좌우 분할) */}
+          <View style={styles.squadsRow}>
+            <View style={[styles.squadColumn, styles.squadColumnPolice]}>
+              <Text style={[styles.squadColumnTitle, { color: '#00E5FF' }]}>
+                👮 POLICE SQUAD
               </Text>
-              {Array.from(policeStats.entries())
-                .sort((a, b) => b[1].captureCount - a[1].captureCount)
-                .map(([id, stat], index) => (
-                  <View
-                    key={id}
-                    style={[
-                      styles.scoreRow,
-                      index % 2 === 0 ? styles.scoreRowAlt : null, // 줄무늬 효과
-                    ]}>
-                    <Text style={styles.scoreName}>{stat.nickname}</Text>
-                    <Text style={[styles.scoreValue, { color: '#00E5FF' }]}>
-                      {stat.captureCount} KILL
-                    </Text>
-                  </View>
-                ))}
+              <View style={styles.squadList}>
+                {Array.from(policeStats.entries())
+                  .sort((a, b) => b[1].captureCount - a[1].captureCount)
+                  .map(([id, stat], index) => (
+                    <View key={id} style={styles.squadRow}>
+                      <Text style={styles.squadRowName} numberOfLines={1}>
+                        {stat.nickname}
+                      </Text>
+                      <Text style={[styles.squadRowValue, { color: '#00E5FF' }]}>
+                        {stat.captureCount}
+                      </Text>
+                    </View>
+                  ))}
+              </View>
             </View>
-
-            {/* 도둑 팀 스코어보드 */}
-            <View
-              style={[
-                styles.pixelContainer,
-                styles.scoreboardContainer,
-                { borderColor: '#FF0055', marginTop: 20 },
-              ]}>
-              <Text style={[styles.scoreboardTitle, { color: '#FF0055' }]}>
+            <View style={[styles.squadColumn, styles.squadColumnThief, { marginLeft: 12 }]}>
+              <Text style={[styles.squadColumnTitle, { color: '#FF0055' }]}>
                 🏃 THIEF GANG
               </Text>
-              {Array.from(thiefStats.entries())
-                .sort((a, b) => b[1].survivalTime - a[1].survivalTime)
-                .map(([id, stat], index) => (
-                  <View
-                    key={id}
-                    style={[
-                      styles.scoreRow,
-                      index % 2 === 0 ? styles.scoreRowAlt : null,
-                    ]}>
-                    <Text
-                      style={[
-                        styles.scoreName,
-                        stat.capturedAt != null ? styles.capturedName : null, // 잡힌 사람은 취소선
-                      ]}>
-                      {stat.nickname}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.scoreValue,
-                        { color: stat.capturedAt ? '#666' : '#FF0055' },
-                      ]}>
-                      {stat.capturedAt
-                        ? formatTime(stat.survivalTime)
-                        : 'SURVIVED!'}
-                    </Text>
-                  </View>
-                ))}
+              <View style={styles.squadList}>
+                {Array.from(thiefStats.entries())
+                  .sort((a, b) => b[1].survivalTime - a[1].survivalTime)
+                  .map(([id, stat]) => (
+                    <View key={id} style={styles.squadRow}>
+                      <Text
+                        style={[
+                          styles.squadRowName,
+                          stat.capturedAt != null ? styles.squadRowNameCaptured : null,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {stat.nickname}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.squadRowValue,
+                          { color: stat.capturedAt != null ? '#888' : '#FF0055' },
+                        ]}
+                      >
+                        {stat.capturedAt != null
+                          ? formatTime(stat.survivalTime)
+                          : '✓'}
+                      </Text>
+                    </View>
+                  ))}
+              </View>
             </View>
           </View>
 
-          {/* 4. Return Button (두껍고 누르고 싶은 아케이드 버튼 스타일) */}
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={onReturnToLobby}
-            style={styles.returnButtonWrapper}>
+            style={styles.returnButtonWrapper}
+          >
             <View style={styles.returnButtonShadow} />
             <View style={styles.returnButtonFront}>
               <Text style={styles.buttonText}>RETURN TO LOBBY ▶</Text>
             </View>
           </TouchableOpacity>
-        </View>
-      </View>
+        </ScrollView>
+      </ImageBackground>
     </SafeAreaView>
   );
 };
@@ -290,159 +300,125 @@ const styles = StyleSheet.create({
   },
   resultBody: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
+  },
+  scrollWrap: {
+    flex: 1,
   },
   resultContent: {
+    flexGrow: 1,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    alignItems: 'stretch',
+  },
+  resultContentBottom: {
+    justifyContent: 'flex-end',
+  },
+
+  mvpRow: {
+    flexDirection: 'row',
+    marginBottom: 16,
+  },
+  mvpInfographic: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    borderLeftWidth: 6,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 8,
   },
-  mainTitle: {
-    fontSize: 40,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    marginBottom: 20,
-    textAlign: 'center',
-    fontFamily: pixelFont,
-    letterSpacing: 4,
-    textShadowColor: '#FF0055', // 메인 타이틀은 강렬한 레드/핑크 네온
-    textShadowOffset: { width: 3, height: 3 },
-    textShadowRadius: 1,
+  mvpInfographicHalf: {
+    flex: 1,
   },
-
-  // 공통 픽셀 컨테이너 스타일 (두꺼운 테두리, 딱딱한 그림자)
-  pixelContainer: {
-    backgroundColor: '#1F1147', // 배경보다 약간 밝은 카드색
-    borderWidth: 4,
-    borderBottomWidth: 8, // 아래쪽 그림자 효과를 더 두껍게
-    borderRightWidth: 6, // 오른쪽 그림자 효과
-    padding: 16,
-    width: '100%',
-    marginBottom: 16,
-    // 픽셀 느낌을 위해 shadowRadius를 0으로 설정 (안드로이드는 elevation으로 대체)
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 4, height: 4 },
-        shadowOpacity: 1,
-        shadowRadius: 0,
-      },
-      android: {
-        elevation: 0, // 안드로이드에서는 border width로 픽셀 느낌을 내므로 elevation 제거
-      },
-    }),
-  },
-
-  // Winner Banner Section
-  winnerBanner: {
+  mvpInfographicLeft: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 24,
-    backgroundColor: '#1A1A3A',
+    flex: 1,
   },
-  winnerTeamText: {
+  mvpInfographicIcon: {
+    fontSize: 36,
+    marginRight: 14,
+  },
+  mvpInfographicLabelWrap: {
+    flex: 1,
+  },
+  mvpInfographicLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.8)',
+    letterSpacing: 1.2,
+    marginBottom: 2,
+  },
+  mvpInfographicName: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  mvpInfographicRight: {
+    alignItems: 'flex-end',
+  },
+  mvpInfographicValue: {
     fontSize: 28,
-    fontWeight: '900',
-    fontFamily: pixelFont,
-    textShadowOffset: { width: 2, height: 2 },
-    textShadowRadius: 5,
-    textAlign: 'center',
+    fontWeight: '800',
   },
-  resultReason: {
-    marginTop: 12,
-    fontSize: 14,
-    color: '#B4B8FF',
-    textAlign: 'center',
-    fontFamily: pixelFont,
-    fontStyle: 'italic',
-  },
-
-  // MVP Section
-  mvpContainer: {
-    borderColor: '#FFD700', // 골드 테두리
-    backgroundColor: '#2A2A5A',
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  mvpHeaderBadge: {
-    backgroundColor: '#FFD700',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderWidth: 2,
-    borderColor: '#000',
-    marginBottom: 12,
-    marginTop: -24, // 카트 위로 살짝 튀어나오게 배지 배치
-  },
-  mvpHeaderLabel: {
-    color: '#000',
-    fontWeight: 'bold',
+  mvpInfographicUnit: {
     fontSize: 12,
-    fontFamily: pixelFont,
-  },
-  mvpNickname: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 8,
-    fontFamily: pixelFont,
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 2, height: 2 },
-    textShadowRadius: 0,
-  },
-  mvpStatValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    fontFamily: pixelFont,
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 3,
+    color: 'rgba(255,255,255,0.9)',
+    marginTop: 2,
   },
 
-  // Stats Scoreboards Section
-  statsSection: {
-    width: '100%',
-    marginTop: 10,
+  // 경찰/도둑 스쿼드 좌우 반반
+  squadsRow: {
+    flexDirection: 'row',
+    marginBottom: 20,
   },
-  scoreboardContainer: {
-    padding: 0, // 내부 패딩 제거하고 scoreRow에서 처리
+  squadColumn: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    borderRadius: 8,
+    overflow: 'hidden',
   },
-  scoreboardTitle: {
-    fontSize: 20,
-    fontWeight: '900',
+  squadColumnPolice: {
+    borderTopWidth: 3,
+    borderTopColor: '#00E5FF',
+  },
+  squadColumnThief: {
+    borderTopWidth: 3,
+    borderTopColor: '#FF0055',
+  },
+  squadColumnTitle: {
+    fontSize: 13,
+    fontWeight: '800',
     textAlign: 'center',
-    paddingVertical: 12,
-    fontFamily: pixelFont,
-    letterSpacing: 1,
-    backgroundColor: 'rgba(0,0,0,0.2)', // 헤더 배경을 약간 어둡게
-    borderBottomWidth: 4,
-    borderBottomColor: 'rgba(0,0,0,0.5)',
+    paddingVertical: 10,
+    letterSpacing: 0.5,
   },
-  scoreRow: {
+  squadList: {
+    paddingHorizontal: 10,
+    paddingBottom: 10,
+  },
+  squadRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderBottomWidth: 2,
-    borderBottomColor: '#120429',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
   },
-  scoreRowAlt: {
-    backgroundColor: 'rgba(255,255,255,0.05)', // 줄무늬 배경 효과
-  },
-  scoreName: {
-    fontSize: 16,
+  squadRowName: {
+    fontSize: 13,
     color: '#FFFFFF',
-    fontFamily: pixelFont,
-    fontWeight: 'bold',
     flex: 1,
+    marginRight: 8,
   },
-  capturedName: {
+  squadRowNameCaptured: {
     color: '#888',
-    textDecorationLine: 'line-through', // 잡힌 사람은 취소선 표시
+    textDecorationLine: 'line-through',
   },
-  scoreValue: {
-    fontSize: 16,
-    fontFamily: pixelFont,
-    fontWeight: 'bold',
+  squadRowValue: {
+    fontSize: 14,
+    fontWeight: '700',
   },
 
   // Return Button (아케이드 버튼 스타일)

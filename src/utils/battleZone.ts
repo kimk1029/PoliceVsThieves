@@ -1,30 +1,32 @@
-/** 서버와 동일: 총 게임 시간의 40%가 지나면 축소 시작, 남은 60% 동안 1000m → 100m */
-const BATTLE_ZONE_INITIAL_RADIUS_M = 1000;
-const BATTLE_ZONE_MIN_RADIUS_M = 100;
+/** 베이스캠프 중심 실제 거리 100m(네이버 지도 미터 단위), 전체 게임 시간 40% 후 축소, 남은 60% 동안 100m → 30m */
+export const BATTLE_ZONE_INITIAL_RADIUS_M = 100;
+const BATTLE_ZONE_MIN_RADIUS_M = 30;
 const SHRINK_START_ELAPSED_RATIO = 0.4;
 
 /**
- * BATTLE 모드: 현재 자기장 반경(m). phaseEndsAt(chase 종료 시각), chaseSeconds(초), now(현재 시각 ms).
+ * 플레이가능 영역(자기장) 반경(m).
+ * phaseEndsAt = 추격 종료 시각(ms), hidingSeconds + chaseSeconds = 전체 시간.
+ * 전체 시간의 40%가 지나면 축소 시작, 남은 60% 동안 100m → 30m.
  */
 export function getBattleZoneRadiusMeters(
   phaseEndsAt: number | null,
+  hidingSeconds: number,
   chaseSeconds: number,
   now: number
 ): number | null {
   if (phaseEndsAt == null || chaseSeconds <= 0) return null;
 
-  const totalChaseMs = chaseSeconds * 1000;
-  const chaseEndAt = phaseEndsAt;
-  const chaseStartAt = chaseEndAt - totalChaseMs;
-  const elapsed = now - chaseStartAt;
+  const totalMs = (hidingSeconds + chaseSeconds) * 1000;
+  const gameStartAt = phaseEndsAt - totalMs;
+  const elapsed = now - gameStartAt;
 
   if (elapsed <= 0) return BATTLE_ZONE_INITIAL_RADIUS_M;
-  if (elapsed >= totalChaseMs) return BATTLE_ZONE_MIN_RADIUS_M;
+  if (elapsed >= totalMs) return BATTLE_ZONE_MIN_RADIUS_M;
 
-  const shrinkStartMs = totalChaseMs * SHRINK_START_ELAPSED_RATIO;
+  const shrinkStartMs = totalMs * SHRINK_START_ELAPSED_RATIO;
   if (elapsed < shrinkStartMs) return BATTLE_ZONE_INITIAL_RADIUS_M;
 
-  const shrinkDurationMs = totalChaseMs * (1 - SHRINK_START_ELAPSED_RATIO);
+  const shrinkDurationMs = totalMs * (1 - SHRINK_START_ELAPSED_RATIO);
   const shrinkElapsed = elapsed - shrinkStartMs;
   const progress = Math.min(1, shrinkElapsed / shrinkDurationMs);
   const radius =

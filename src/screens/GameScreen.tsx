@@ -18,7 +18,7 @@ import {
   type NaverMapViewRef,
 } from '@mj-studio/react-native-naver-map';
 import { useGameStore } from '../store/useGameStore';
-import { getBattleZoneRadiusMeters } from '../utils/battleZone';
+import { getBattleZoneRadiusMeters, BATTLE_ZONE_INITIAL_RADIUS_M } from '../utils/battleZone';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useGameLogic } from '../hooks/useGameLogic';
 import { PixelButton } from '../components/pixel/PixelButton';
@@ -56,18 +56,29 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     animationDuration?: number;
   } | null>(null);
   const { team, location, playerId, nickname } = usePlayerStore();
-  const { status, players, basecamp, settings, phaseEndsAt } = useGameStore();
+  const { status, players, basecamp, fixedBasecamp, settings, phaseEndsAt, setFixedBasecampFromCurrentLocation } =
+    useGameStore();
   const playersList = Array.from(players.values());
 
-  // 베이스캠프(시작 위치): 유효한 좌표일 때만 지도에 표시
+  // 현재 위치가 인식되면 그 위치를 베이스캠프(시작 위치)로 고정 — 모든 게임 모드·모든 지도에 표시
+  useEffect(() => {
+    if (status == null || status === 'END') return;
+    if (!location || typeof location.lat !== 'number' || typeof location.lng !== 'number') return;
+    if (!isFinite(location.lat) || !isFinite(location.lng)) return;
+    if (location.lat === 0 && location.lng === 0) return;
+    setFixedBasecampFromCurrentLocation(location.lat, location.lng);
+  }, [status, location?.lat, location?.lng, setFixedBasecampFromCurrentLocation]);
+
+  // 베이스캠프(시작 위치): 고정된 위치 우선, 유효한 좌표일 때만 지도에 표시 (게임 중 계속 고정)
+  const basecampSource = fixedBasecamp ?? basecamp;
   const basecampCoord =
-    basecamp &&
-      typeof basecamp.lat === 'number' &&
-      typeof basecamp.lng === 'number' &&
-      isFinite(basecamp.lat) &&
-      isFinite(basecamp.lng) &&
-      (basecamp.lat !== 0 || basecamp.lng !== 0)
-      ? { latitude: basecamp.lat, longitude: basecamp.lng }
+    basecampSource &&
+      typeof basecampSource.lat === 'number' &&
+      typeof basecampSource.lng === 'number' &&
+      isFinite(basecampSource.lat) &&
+      isFinite(basecampSource.lng) &&
+      (basecampSource.lat !== 0 || basecampSource.lng !== 0)
+      ? { latitude: basecampSource.lat, longitude: basecampSource.lng }
       : null;
 
   const [qrScannerVisible, setQrScannerVisible] = useState(false);
@@ -246,8 +257,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       },
       {
         enableHighAccuracy: true,
-        timeout: 20000,
-        maximumAge: 2000,
+        timeout: 25000,
+        maximumAge: 0,
         forceRequestLocation: true,
         showLocationDialog: true,
       },
@@ -292,7 +303,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             setCamera({
               latitude: myLocationCoord.latitude,
               longitude: myLocationCoord.longitude,
-              zoom: isPolice ? 15 : 13,
+              zoom: 17,
               animationDuration: 200,
             });
           } catch (e) {
@@ -317,14 +328,21 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     ? Math.max(0, Math.ceil((gameEndsAt - now) / 1000))
     : 0;
 
-  // BATTLE 모드 자기장: 베이스캠프 중심 원형, CHASE 단계에서만 표시, 시간에 따라 축소
+  // 플레이가능 영역(자기장): 베이스캠프 중심 실제 거리 1km(미터), HIDING/CHASE 모두 표시. 전체시간 40% 후 축소
   const battleZoneRadius =
-    status === 'CHASE' &&
-      settings?.gameMode === 'BATTLE' &&
-      basecampCoord &&
+    basecampCoord &&
+      (status === 'HIDING' || status === 'CHASE') &&
       phaseEndsAt != null &&
+      settings?.hidingSeconds != null &&
       settings?.chaseSeconds
-      ? getBattleZoneRadiusMeters(phaseEndsAt, settings.chaseSeconds, now)
+      ? status === 'HIDING'
+        ? BATTLE_ZONE_INITIAL_RADIUS_M
+        : getBattleZoneRadiusMeters(
+          phaseEndsAt,
+          settings.hidingSeconds,
+          settings.chaseSeconds,
+          now
+        )
       : null;
 
   // 플레이어 분류
@@ -529,8 +547,34 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                   isUseTextureViewAndroid={true}
                   onInitialized={() => setMapReady(true)}
                   camera={camera ?? undefined}
-                  initialCamera={{ latitude: 37.5665, longitude: 126.978, zoom: 15 }}
+                  initialCamera={{ latitude: 37.5665, longitude: 126.978, zoom: 17 }}
                 >
+                  {/* 베이스캠프·자기장은 먼저 그려서 플레이어 마커가 위에 오도록 */}
+                  {basecampCoord ? (
+                    <NaverMapMarkerOverlay
+                      key="marker-basecamp"
+                      latitude={basecampCoord.latitude}
+                      longitude={basecampCoord.longitude}
+                      width={28}
+                      height={28}
+                      anchor={{ x: 0.5, y: 1 }}
+                    >
+                      <View collapsable={false} style={styles.basecampMarkerIcon}>
+                        <Text style={styles.basecampMarkerEmoji}>BC</Text>
+                      </View>
+                    </NaverMapMarkerOverlay>
+                  ) : null}
+                  {basecampCoord && battleZoneRadius != null ? (
+                    <NaverMapCircleOverlay
+                      key="battle-zone"
+                      latitude={basecampCoord.latitude}
+                      longitude={basecampCoord.longitude}
+                      radius={battleZoneRadius}
+                      color="rgba(135, 206, 235, 0.28)"
+                      outlineWidth={3}
+                      outlineColor="rgba(135, 206, 235, 0.85)"
+                    />
+                  ) : null}
                   {smoothMyCoordVal ? (
                     <NaverMapMarkerOverlay
                       key="marker-me"
@@ -607,31 +651,6 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                       </NaverMapMarkerOverlay>
                     );
                   })}
-                  {basecampCoord ? (
-                    <NaverMapMarkerOverlay
-                      key="marker-basecamp"
-                      latitude={basecampCoord.latitude}
-                      longitude={basecampCoord.longitude}
-                      width={56}
-                      height={28}
-                      anchor={{ x: 0.5, y: 1 }}
-                    >
-                      <View collapsable={false} style={styles.basecampMarkerIcon}>
-                        <Text style={styles.basecampMarkerEmoji}>베이스캠프</Text>
-                      </View>
-                    </NaverMapMarkerOverlay>
-                  ) : null}
-                  {basecampCoord && battleZoneRadius != null ? (
-                    <NaverMapCircleOverlay
-                      key="battle-zone"
-                      latitude={basecampCoord.latitude}
-                      longitude={basecampCoord.longitude}
-                      radius={battleZoneRadius}
-                      color="rgba(0, 120, 255, 0.25)"
-                      outlineWidth={2}
-                      outlineColor="rgba(0, 150, 255, 0.6)"
-                    />
-                  ) : null}
                 </NaverMapView>
               ) : (
                 <View style={styles.mapFallback}>
@@ -744,8 +763,34 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                     isUseTextureViewAndroid={true}
                     onInitialized={() => setMapReady(true)}
                     camera={camera ?? undefined}
-                    initialCamera={{ latitude: 37.5665, longitude: 126.978, zoom: 13 }}
+                    initialCamera={{ latitude: 37.5665, longitude: 126.978, zoom: 17 }}
                   >
+                    {/* 베이스캠프·자기장은 먼저 그려서 플레이어 마커가 위에 오도록 */}
+                    {basecampCoord ? (
+                      <NaverMapMarkerOverlay
+                        key="marker-basecamp"
+                        latitude={basecampCoord.latitude}
+                        longitude={basecampCoord.longitude}
+                        width={28}
+                        height={28}
+                        anchor={{ x: 0.5, y: 1 }}
+                      >
+                        <View collapsable={false} style={styles.basecampMarkerIcon}>
+                          <Text style={styles.basecampMarkerEmoji}>BC</Text>
+                        </View>
+                      </NaverMapMarkerOverlay>
+                    ) : null}
+                    {basecampCoord && battleZoneRadius != null ? (
+                      <NaverMapCircleOverlay
+                        key="battle-zone"
+                        latitude={basecampCoord.latitude}
+                        longitude={basecampCoord.longitude}
+                        radius={battleZoneRadius}
+                        color="rgba(135, 206, 235, 0.28)"
+                        outlineWidth={3}
+                        outlineColor="rgba(135, 206, 235, 0.85)"
+                      />
+                    ) : null}
                     {smoothMyCoordVal ? (
                       <NaverMapMarkerOverlay
                         key="marker-me"
@@ -802,31 +847,6 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                         </NaverMapMarkerOverlay>
                       );
                     })}
-                    {basecampCoord ? (
-                      <NaverMapMarkerOverlay
-                        key="marker-basecamp"
-                        latitude={basecampCoord.latitude}
-                        longitude={basecampCoord.longitude}
-                        width={56}
-                        height={28}
-                        anchor={{ x: 0.5, y: 1 }}
-                      >
-                        <View collapsable={false} style={styles.basecampMarkerIcon}>
-                          <Text style={styles.basecampMarkerEmoji}>베이스캠프</Text>
-                        </View>
-                      </NaverMapMarkerOverlay>
-                    ) : null}
-                    {basecampCoord && battleZoneRadius != null ? (
-                      <NaverMapCircleOverlay
-                        key="battle-zone"
-                        latitude={basecampCoord.latitude}
-                        longitude={basecampCoord.longitude}
-                        radius={battleZoneRadius}
-                        color="rgba(0, 120, 255, 0.25)"
-                        outlineWidth={2}
-                        outlineColor="rgba(0, 150, 255, 0.6)"
-                      />
-                    ) : null}
                   </NaverMapView>
                 ) : (
                   <View style={styles.mapFallback}>
@@ -1321,20 +1341,19 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   basecampMarkerIcon: {
-    width: 32,
-    minHeight: 28,
-    paddingHorizontal: 4,
-    paddingVertical: 2,
-    backgroundColor: '#2D7D46',
-    borderRadius: 2,
+    width: 26,
+    height: 26,
+    backgroundColor: 'transparent',
+    borderRadius: 4,
     borderWidth: 2,
-    borderColor: '#FFF',
+    borderColor: '#1B5E20',
     justifyContent: 'center',
     alignItems: 'center',
   },
   basecampMarkerEmoji: {
-    fontSize: 10,
-    color: '#FFF',
-    fontWeight: '700',
+    fontSize: 8,
+    color: '#1B5E20',
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
 });
