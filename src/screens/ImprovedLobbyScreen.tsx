@@ -46,7 +46,7 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
   const scanProcessingRef = useRef(false);
 
   const { playerId, setNickname, loadNickname } = usePlayerStore();
-  const { roomId, players, status, chatMessages, settings } = useGameStore();
+  const { roomId, players, status, chatMessages, settings, setRoomInfo, setHostAppliedSettings } = useGameStore();
   const {
     isConnected,
     createRoom,
@@ -134,7 +134,7 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
       policeRatio: 0.5, // 5:5 비율 (홀수일 경우 경찰이 더 많음)
     };
     const settingsToUse = savedSettings || defaultSettings;
-    
+    setHostAppliedSettings(settingsToUse); // 방 생성 시 적용 설정으로 game:state 덮어쓰기 방지
     console.log('[Lobby] Creating room with settings:', settingsToUse);
     await createRoom(playerName, settingsToUse);
   };
@@ -250,6 +250,7 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
         players={players as any}
         playerId={playerId}
         settings={settings as any}
+        savedSettings={savedSettings}
         chatMessages={chatMessages as any}
         chatInput={chatInput}
         onChangeChatInput={setChatInput}
@@ -262,16 +263,18 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
         onStartGame={startGame}
         onUpdateSettings={(newSettings) => {
           updateRoomSettings(newSettings);
-          // 설정 변경 시 저장
-          AsyncStorage.setItem(ROOM_SETTINGS_KEY, JSON.stringify({
-            ...savedSettings,
-            ...newSettings,
-          })).then(() => {
-            setSavedSettings((prev: any) => ({ ...prev, ...newSettings }));
-            console.log('[Lobby] Settings saved:', newSettings);
-          }).catch((error) => {
-            console.warn('[Lobby] Failed to save settings', error);
-          });
+          const merged = { ...(useGameStore.getState().settings || {}), ...newSettings };
+          setRoomInfo({ settings: merged });
+          setHostAppliedSettings(newSettings); // game:state로 덮어쓰기 방지
+          const next = { ...savedSettings, ...newSettings };
+          AsyncStorage.setItem(ROOM_SETTINGS_KEY, JSON.stringify(next))
+            .then(() => {
+              setSavedSettings(next);
+              console.log('[Lobby] Settings saved:', newSettings);
+            })
+            .catch((error) => {
+              console.warn('[Lobby] Failed to save settings', error);
+            });
         }}
       />
     );

@@ -27,7 +27,7 @@ export const useGameLogic = () => {
   const [webrtcReady, setWebrtcReady] = useState(false);
 
   const {playerId, nickname, team, updateLocation} = usePlayerStore();
-  const {roomId, players, setRoomInfo, setPlayers, updatePlayer, addChatMessage} = useGameStore();
+  const {roomId, players, settings, setRoomInfo, setPlayers, updatePlayer, addChatMessage} = useGameStore();
 
   // 위치 업데이트 스로틀링 (깜빡임 방지)
   const locationUpdateTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
@@ -488,6 +488,17 @@ export const useGameLogic = () => {
             }
             break;
 
+          case 'basecamp:set':
+          case 'basecamp:broadcast': {
+            // 서버가 베이스캠프 좌표를 별도 메시지로 브로드캐스트할 때
+            const bc = message.data?.basecamp ?? message.basecamp;
+            if (bc && typeof bc.lat === 'number' && typeof bc.lng === 'number' && isFinite(bc.lat) && isFinite(bc.lng)) {
+              setRoomInfo({ basecamp: { ...bc, setAt: Date.now() } });
+              console.log('[GameLogic] 📍 Basecamp received from server:', bc);
+            }
+            break;
+          }
+
           case 'game:start':
             if (message.success === false) {
               console.warn('[GameLogic] game:start failed:', message.error);
@@ -902,15 +913,27 @@ export const useGameLogic = () => {
   }, [isConnected, savedRoomId, playerId, nickname, roomId, joinRoom]);
 
   // 게임 시작
-  const startGame = useCallback(() => {
+  const startGame = useCallback(async () => {
     if (!isConnected || !roomId || !playerId) return;
+    const payload: Record<string, unknown> = {};
+    // BATTLE 모드: 방장의 첫 위치를 공통 베이스캠프로 서버에 전달 (모든 플레이어가 동일한 자기장 중심 사용)
+    if (settings?.gameMode === 'BATTLE') {
+      try {
+        const loc = myLocation || (await locationService.getCurrentLocation());
+        if (loc && typeof loc.lat === 'number' && typeof loc.lng === 'number' && isFinite(loc.lat) && isFinite(loc.lng)) {
+          payload.basecamp = { lat: loc.lat, lng: loc.lng };
+        }
+      } catch (e) {
+        console.warn('[GameLogic] Could not get host location for BATTLE basecamp:', e);
+      }
+    }
     wsClient.send({
       type: 'game:start',
       playerId,
       roomId,
-      payload: {},
+      payload,
     });
-  }, [isConnected, roomId, playerId, wsClient]);
+  }, [isConnected, roomId, playerId, wsClient, settings?.gameMode, myLocation, locationService]);
 
   // 로비 설정 변경(방장 전용)
   const updateRoomSettings = useCallback(

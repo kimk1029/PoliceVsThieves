@@ -60,17 +60,45 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     useGameStore();
   const playersList = Array.from(players.values());
 
-  // 현재 위치가 인식되면 그 위치를 베이스캠프(시작 위치)로 고정 — 모든 게임 모드·모든 지도에 표시
+  // BATTLE 모드: 방장의 첫 위치를 공통 베이스캠프로 사용 (한 번 설정되면 고정)
+  const [hostBasecamp, setHostBasecamp] = useState<{ lat: number; lng: number } | null>(null);
+
+  // 현재 위치가 인식되면 그 위치를 베이스캠프로 고정 (BASIC 모드만)
+  // BATTLE 모드: 방장 위치 기준이므로 여기서 덮어쓰지 않음
   useEffect(() => {
     if (status == null || status === 'END') return;
+    if (settings?.gameMode === 'BATTLE') return;
     if (!location || typeof location.lat !== 'number' || typeof location.lng !== 'number') return;
     if (!isFinite(location.lat) || !isFinite(location.lng)) return;
     if (location.lat === 0 && location.lng === 0) return;
     setFixedBasecampFromCurrentLocation(location.lat, location.lng);
-  }, [status, location?.lat, location?.lng, setFixedBasecampFromCurrentLocation]);
+  }, [status, settings?.gameMode, location?.lat, location?.lng, setFixedBasecampFromCurrentLocation]);
 
-  // 베이스캠프(시작 위치): 고정된 위치 우선, 유효한 좌표일 때만 지도에 표시 (게임 중 계속 고정)
-  const basecampSource = fixedBasecamp ?? basecamp;
+  // BATTLE 모드: 방장의 첫 유효 위치를 베이스캠프로 고정 (모든 플레이어 동일)
+  useEffect(() => {
+    if (status == null || status === 'END') return;
+    if (settings?.gameMode !== 'BATTLE') return;
+    if (hostBasecamp) return; // 이미 설정됨
+    const host = playersList.find((p) => (p as any).role === 'HOST');
+    if (!host) return;
+    const isMeHost = host.playerId === playerId;
+    const hostLoc = isMeHost ? location : (host as any).location;
+    if (!hostLoc || typeof hostLoc.lat !== 'number' || typeof hostLoc.lng !== 'number') return;
+    if (!isFinite(hostLoc.lat) || !isFinite(hostLoc.lng)) return;
+    if (hostLoc.lat === 0 && hostLoc.lng === 0) return;
+    setHostBasecamp({ lat: hostLoc.lat, lng: hostLoc.lng });
+  }, [status, settings?.gameMode, playersList, playerId, location?.lat, location?.lng, hostBasecamp]);
+
+  // 게임 종료 시 host basecamp 리셋
+  useEffect(() => {
+    if (status === 'END') setHostBasecamp(null);
+  }, [status]);
+
+  // 베이스캠프 좌표: BATTLE = 서버 basecamp 우선(모든 플레이어 동일), 없으면 방장 위치 폴백. BASIC = 고정/서버 basecamp
+  const basecampSource =
+    settings?.gameMode === 'BATTLE'
+      ? (fixedBasecamp ?? basecamp ?? hostBasecamp)
+      : fixedBasecamp ?? basecamp;
   const basecampCoord =
     basecampSource &&
       typeof basecampSource.lat === 'number' &&

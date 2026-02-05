@@ -26,6 +26,8 @@ interface LobbyViewProps {
   players: Map<string, Player>;
   playerId: string | null;
   settings: RoomSettings | null;
+  /** 로컬 저장 설정 (서버 설정에 없는 필드 fallback용) */
+  savedSettings?: RoomSettings | null;
   chatMessages: ChatMessage[];
   chatInput: string;
   onChangeChatInput: (t: string) => void;
@@ -41,6 +43,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   players,
   playerId,
   settings,
+  savedSettings,
   chatMessages,
   chatInput,
   onChangeChatInput,
@@ -79,11 +82,18 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     Clipboard.setString(roomId);
   };
 
+  // 표시용 설정: store(서버) + 로컬 저장 병합. 방장이 APPLY 시 setRoomInfo로 store가 먼저 갱신되므로 settings 우선
+  const displaySettings = React.useMemo(
+    () => ({ ...savedSettings, ...settings }) as RoomSettings | null,
+    [settings, savedSettings]
+  );
+
   const openSettings = () => {
-    setHidingSecondsDraft(settings?.hidingSeconds ?? 60);
-    setTotalMinutesDraft(Math.max(1, Math.round((settings?.chaseSeconds ?? 300) / 60)));
-    setGameModeDraft((settings?.gameMode as any) || 'BASIC');
-    setPoliceRatioDraft(settings?.policeRatio ?? 0.5);
+    const merged = displaySettings || settings || savedSettings;
+    setHidingSecondsDraft(merged?.hidingSeconds ?? 60);
+    setTotalMinutesDraft(Math.max(1, Math.round((merged?.chaseSeconds ?? 300) / 60)));
+    setGameModeDraft((merged?.gameMode as any) || 'BASIC');
+    setPoliceRatioDraft(merged?.policeRatio ?? 0.5);
     setShowSettings(true);
   };
 
@@ -159,7 +169,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
         </View>
         <View style={styles.headerGameInfo}>
           <Text style={styles.gameInfoText} numberOfLines={1}>
-            MODE {settings?.gameMode === 'BATTLE' ? 'BATTLE' : 'BASIC'} · HIDE {settings?.hidingSeconds ?? 60}s · TOTAL {Math.round((settings?.chaseSeconds ?? 300) / 60)}m
+            MODE {(displaySettings?.gameMode || 'BASIC') === 'BATTLE' ? 'BATTLE' : 'BASIC'} · HIDE {displaySettings?.hidingSeconds ?? 60}s · TOTAL {Math.round((displaySettings?.chaseSeconds ?? 300) / 60)}m
           </Text>
         </View>
       </View>
@@ -444,10 +454,10 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
               </View>
               <View style={{ height: 6 }} />
               <Text style={styles.modalText}>
-                CURRENT: MODE {(settings?.gameMode || 'BASIC') === 'BASIC' ? 'BASIC' : 'BATTLE'} / HIDE {settings?.hidingSeconds ?? 60}s / TOTAL {Math.round((settings?.chaseSeconds ?? 300) / 60)}m
+                CURRENT: MODE {(displaySettings?.gameMode || 'BASIC') === 'BASIC' ? 'BASIC' : 'BATTLE'} / HIDE {displaySettings?.hidingSeconds ?? 60}s / TOTAL {Math.round((displaySettings?.chaseSeconds ?? 300) / 60)}m
               </Text>
               {(() => {
-                const currentRatio = settings?.policeRatio ?? 0.5;
+                const currentRatio = displaySettings?.policeRatio ?? 0.5;
                 const total = Math.max(2, playersList.length);
                 const { police, thief } = calculateTeamDistribution(currentRatio, total);
                 const policePct = Math.round(currentRatio * 100);

@@ -24,6 +24,8 @@ interface GameStore {
   status: RoomStatus | null;
   phaseEndsAt: number | null;
   settings: RoomSettings | null;
+  /** 방장이 APPLY한 설정 (game:state로 덮어쓰기 방지) */
+  hostAppliedSettings: Partial<RoomSettings> | null;
   basecamp: Basecamp | null;
   /** 처음 받은 유효한 베이스캠프 위치. 게임 중 고정되어 지도에 항상 표시됨 */
   fixedBasecamp: Basecamp | null;
@@ -32,6 +34,7 @@ interface GameStore {
   result: GameResult | null;
 
   setRoomInfo: (info: Partial<GameStore>) => void;
+  setHostAppliedSettings: (s: Partial<RoomSettings> | null) => void;
   setPlayers: (players: Player[]) => void;
   updatePlayer: (playerId: string, updates: Partial<Player>) => void;
   addChatMessage: (message: ChatMessage) => void;
@@ -45,18 +48,28 @@ export const useGameStore = create<GameStore>((set) => ({
   status: null,
   phaseEndsAt: null,
   settings: null,
+  hostAppliedSettings: null,
   basecamp: null,
   fixedBasecamp: null,
   players: new Map(),
   chatMessages: [],
   result: null,
 
+  setHostAppliedSettings: (s) => set({ hostAppliedSettings: s }),
+
   setRoomInfo: (info) =>
     set((state) => {
       const next = { ...state, ...info };
-      // 서버에서 유효한 basecamp를 처음 받으면 고정 (게임 중 계속 지도에 표시)
-      if (info.basecamp !== undefined && state.fixedBasecamp == null && isValidBasecamp(info.basecamp)) {
-        next.fixedBasecamp = info.basecamp;
+      // 서버 settings 수신 시 hostAppliedSettings로 덮어써서 방장 적용값 보존
+      if (info.settings !== undefined && state.hostAppliedSettings) {
+        next.settings = { ...info.settings, ...state.hostAppliedSettings } as RoomSettings;
+      }
+      // 서버에서 유효한 basecamp 수신 시 고정. BATTLE 모드: 항상 서버 basecamp 사용(모든 플레이어 동일)
+      if (info.basecamp !== undefined && isValidBasecamp(info.basecamp)) {
+        const isBattle = (next.settings ?? state.settings)?.gameMode === 'BATTLE';
+        if (isBattle || state.fixedBasecamp == null) {
+          next.fixedBasecamp = info.basecamp;
+        }
       }
       return next;
     }),
@@ -116,6 +129,7 @@ export const useGameStore = create<GameStore>((set) => ({
       status: null,
       phaseEndsAt: null,
       settings: null,
+      hostAppliedSettings: null,
       basecamp: null,
       fixedBasecamp: null,
       players: new Map(),
