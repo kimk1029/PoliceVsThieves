@@ -18,7 +18,11 @@ import {
   type NaverMapViewRef,
 } from '@mj-studio/react-native-naver-map';
 import { useGameStore } from '../store/useGameStore';
-import { getBattleZoneRadiusMeters, BATTLE_ZONE_INITIAL_RADIUS_M } from '../utils/battleZone';
+import {
+  getBattleZoneRadiusMeters,
+  BATTLE_ZONE_INITIAL_RADIUS_M,
+  calculateDistanceMeters,
+} from '../utils/battleZone';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useGameLogic } from '../hooks/useGameLogic';
 import { PixelButton } from '../components/pixel/PixelButton';
@@ -373,16 +377,48 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         )
       : null;
 
+  // BATTLE 모드: 자기장 밖 5초 경고
+  const outsideSinceRef = useRef<number | null>(null);
+  const myPlayer = playersList.find((p: any) => p.playerId === playerId);
+  const isEliminated =
+    (myPlayer as any)?.outOfZoneAt != null ||
+    (team === 'THIEF' && (myPlayer as any)?.thiefStatus?.state === 'OUT_OF_ZONE');
+  const isOutsideZone =
+    !isEliminated &&
+    settings?.gameMode === 'BATTLE' &&
+    (status === 'HIDING' || status === 'CHASE') &&
+    basecampCoord &&
+    battleZoneRadius != null &&
+    myLocationCoord &&
+    calculateDistanceMeters(
+      basecampCoord.latitude,
+      basecampCoord.longitude,
+      myLocationCoord.latitude,
+      myLocationCoord.longitude
+    ) > battleZoneRadius;
+  useEffect(() => {
+    if (isOutsideZone) {
+      if (outsideSinceRef.current == null) outsideSinceRef.current = now;
+    } else {
+      outsideSinceRef.current = null;
+    }
+  }, [isOutsideZone, now]);
+  const outsideRemainingSec =
+    isOutsideZone && outsideSinceRef.current != null
+      ? Math.max(0, Math.ceil(5 - (now - outsideSinceRef.current) / 1000))
+      : null;
+
   // 플레이어 분류
   const thieves = playersList.filter((p: any) => p.team === 'THIEF');
   const polices = playersList.filter((p: any) => p.team === 'POLICE');
   const isPolice = team === 'POLICE';
   const isPoliceHiding = isPolice && hidingRemainingSec > 0;
 
-  // 경찰 화면: 도둑 위치
+  // 경찰 화면: 도둑 위치 (탈락 제외)
   const policeVisibleThiefCoords = isPolice
     ? thieves
       .filter((t: any) => {
+        if ((t as any).outOfZoneAt != null || t.thiefStatus?.state === 'OUT_OF_ZONE') return false;
         const loc = t.location;
         return loc && typeof loc.lat === 'number' && typeof loc.lng === 'number';
       })
@@ -394,10 +430,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       }))
     : [];
 
-  // 경찰 화면: 경찰 위치 (본인 제외)
+  // 경찰 화면: 경찰 위치 (본인 제외, 탈락 제외)
   const policeVisiblePoliceCoords = isPolice
     ? polices
       .filter((p: any) => {
+        if ((p as any).outOfZoneAt != null) return false;
         const loc = p.location;
         return (
           p.playerId !== playerId &&
@@ -413,10 +450,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       }))
     : [];
 
-  // 도둑 화면: 다른 도둑 위치 (본인 제외)
+  // 도둑 화면: 다른 도둑 위치 (본인 제외, 탈락 제외)
   const otherThiefCoords = !isPolice
     ? thieves
       .filter((t: any) => {
+        if ((t as any).outOfZoneAt != null || t.thiefStatus?.state === 'OUT_OF_ZONE') return false;
         const loc = t.location;
         return (
           t.playerId !== playerId &&
@@ -1014,6 +1052,24 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                 ? '경찰은 도둑이 숨을때 까지 대기해주세요!'
                 : '도둑! 빨리 숨고 도망가세요!'}
             </Text>
+          </View>
+        </View>
+      )}
+
+      {isEliminated && (
+        <View style={[styles.countdownOverlay, { backgroundColor: 'rgba(0,0,0,0.85)' }]}>
+          <View style={styles.countdownContent}>
+            <Text style={[styles.countdownText, { fontSize: 28 }]}>탈락</Text>
+            <Text style={styles.countdownSubtext}>자기장 밖 5초 초과로 탈락했습니다</Text>
+          </View>
+        </View>
+      )}
+
+      {!isEliminated && outsideRemainingSec != null && outsideRemainingSec > 0 && (
+        <View style={[styles.countdownOverlay, { backgroundColor: 'rgba(200,50,50,0.9)' }]}>
+          <View style={styles.countdownContent}>
+            <Text style={[styles.countdownText, { fontSize: 32, color: '#fff' }]}>{outsideRemainingSec}</Text>
+            <Text style={styles.countdownSubtext}>자기장 밖! {outsideRemainingSec}초 후 탈락</Text>
           </View>
         </View>
       )}
