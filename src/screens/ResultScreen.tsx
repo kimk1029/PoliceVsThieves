@@ -141,8 +141,8 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
   const scale = Math.min(1, height / 820);
   const scaledWidth = Math.min(width, width / scale);
 
-  const thievesWinBg = require('../assets/images/thieves-win-bg.png');
-  const policeWinBg = require('../assets/images/police-win-bg.png');
+  const thievesWinBg = require('../assets/images/thieves-win-bg.jpg');
+  const policeWinBg = require('../assets/images/police-win-bg.jpg');
   const bgSource = winner === 'THIEF' ? thievesWinBg : policeWinBg;
 
   return (

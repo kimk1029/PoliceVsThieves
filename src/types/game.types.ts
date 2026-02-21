@@ -27,6 +27,8 @@ export interface Player {
   location?: Location | null;
   /** BATTLE 모드: 자기장 밖 탈락 시각 (ms) */
   outOfZoneAt?: number | null;
+  /** BATTLE 모드: 자기장 밖에 처음 진입한 시각 (5초 유예용) */
+  outsideZoneSince?: number | null;
 }
 
 export interface RoomSettings {
@@ -38,6 +40,7 @@ export interface RoomSettings {
   captureRadiusMeters: number;
   jailRadiusMeters: number;
   policeRatio?: number; // 0.0 ~ 1.0, 경찰 비율 (기본값 0.5 = 5:5)
+  battleZoneRadiusM?: number; // BATTLE 모드 자기장 초기 반경(m), 기본 100
 }
 
 export interface Basecamp {

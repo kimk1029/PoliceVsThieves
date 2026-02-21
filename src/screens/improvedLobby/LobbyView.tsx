@@ -59,6 +59,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   const [totalMinutesDraft, setTotalMinutesDraft] = React.useState(5);
   const [gameModeDraft, setGameModeDraft] = React.useState<'BASIC' | 'BATTLE'>('BASIC');
   const [policeRatioDraft, setPoliceRatioDraft] = React.useState(0.5);
+  const [battleZoneRadiusDraft, setBattleZoneRadiusDraft] = React.useState(100);
   const chatScrollRef = React.useRef<ScrollView>(null);
   const policeRatioUpdateTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -94,6 +95,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     setTotalMinutesDraft(Math.max(1, Math.round((merged?.chaseSeconds ?? 300) / 60)));
     setGameModeDraft((merged?.gameMode as any) || 'BASIC');
     setPoliceRatioDraft(merged?.policeRatio ?? 0.5);
+    setBattleZoneRadiusDraft(merged?.battleZoneRadiusM ?? 100);
     setShowSettings(true);
   };
 
@@ -343,6 +345,30 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                 </View>
               </View>
 
+              {/* Battle Zone Radius Slider (BATTLE 모드만) */}
+              {gameModeDraft === 'BATTLE' && (
+                <View style={{ width: '100%', marginBottom: 16 }}>
+                  <Text style={[styles.modalText, { marginBottom: 8 }]}>
+                    ZONE RADIUS: {battleZoneRadiusDraft}m
+                  </Text>
+                  <Slider
+                    style={{ width: '100%', height: 40 }}
+                    minimumValue={50}
+                    maximumValue={500}
+                    step={10}
+                    value={battleZoneRadiusDraft}
+                    onValueChange={setBattleZoneRadiusDraft}
+                    minimumTrackTintColor="#333"
+                    maximumTrackTintColor="#CCC"
+                    thumbTintColor="#000"
+                  />
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Text style={sliderStyles.sliderLabel}>50m</Text>
+                    <Text style={sliderStyles.sliderLabel}>500m</Text>
+                  </View>
+                </View>
+              )}
+
               {/* Hiding Time Slider */}
               <View style={{ width: '100%', marginBottom: 16 }}>
                 <Text style={[styles.modalText, { marginBottom: 8 }]}>
@@ -355,9 +381,9 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                   step={10}
                   value={hidingSecondsDraft}
                   onValueChange={setHidingSecondsDraft}
-                  minimumTrackTintColor="#00FF00"
-                  maximumTrackTintColor="#004400"
-                  thumbTintColor="#00FF00"
+                  minimumTrackTintColor="#333"
+                  maximumTrackTintColor="#CCC"
+                  thumbTintColor="#000"
                 />
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                   <Text style={sliderStyles.sliderLabel}>10초</Text>
@@ -377,9 +403,9 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                   step={1}
                   value={totalMinutesDraft}
                   onValueChange={setTotalMinutesDraft}
-                  minimumTrackTintColor="#FF00FF"
-                  maximumTrackTintColor="#440044"
-                  thumbTintColor="#FF00FF"
+                  minimumTrackTintColor="#333"
+                  maximumTrackTintColor="#CCC"
+                  thumbTintColor="#000"
                 />
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                   <Text style={sliderStyles.sliderLabel}>1분</Text>
@@ -412,9 +438,9 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                         step={0.05}
                         value={policeRatioDraft}
                         onValueChange={handlePoliceRatioChange}
-                        minimumTrackTintColor="#FFFF00"
-                        maximumTrackTintColor="#444400"
-                        thumbTintColor="#FFFF00"
+                        minimumTrackTintColor="#333"
+                        maximumTrackTintColor="#CCC"
+                        thumbTintColor="#000"
                       />
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                         <Text style={sliderStyles.sliderLabel}>도둑 많음 (0%)</Text>
@@ -447,6 +473,9 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                       hidingSeconds: hidingClamped,
                       chaseSeconds,
                       policeRatio: ratioClamped,
+                      battleZoneRadiusM: gameModeDraft === 'BATTLE'
+                        ? Math.max(50, Math.min(500, Math.round(battleZoneRadiusDraft)))
+                        : undefined,
                     });
                     setShowSettings(false);
                   }}
@@ -478,8 +507,9 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
 
 const sliderStyles = StyleSheet.create({
   sliderLabel: {
-    fontFamily: 'PressStart2P-Regular',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     fontSize: 8,
-    color: '#00FF00',
+    color: '#000',
+    fontWeight: 'bold',
   },
 });

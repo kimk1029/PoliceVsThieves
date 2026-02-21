@@ -20,7 +20,7 @@ import {
 import { useGameStore } from '../store/useGameStore';
 import {
   getBattleZoneRadiusMeters,
-  BATTLE_ZONE_INITIAL_RADIUS_M,
+  BATTLE_ZONE_DEFAULT_RADIUS_M,
   calculateDistanceMeters,
 } from '../utils/battleZone';
 import { usePlayerStore } from '../store/usePlayerStore';
@@ -347,7 +347,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       hasCenteredOnceRef.current = false;
       lastCameraCoordRef.current = null;
     }
-  }, [myLocationCoord, upsertSmoothPosition, isPolice]);
+  }, [myLocationCoord, upsertSmoothPosition]);
 
   // 게임 총시간 타이머 (BATTLE 자기장 부드러운 축소를 위해 100ms 간격)
   const [now, setNow] = useState(Date.now());
@@ -361,6 +361,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     : 0;
 
   // 플레이가능 영역(자기장): 베이스캠프 중심 실제 거리 1km(미터), HIDING/CHASE 모두 표시. 전체시간 40% 후 축소
+  const configuredRadius = settings?.battleZoneRadiusM ?? BATTLE_ZONE_DEFAULT_RADIUS_M;
   const battleZoneRadius =
     basecampCoord &&
       (status === 'HIDING' || status === 'CHASE') &&
@@ -368,12 +369,13 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       settings?.hidingSeconds != null &&
       settings?.chaseSeconds
       ? status === 'HIDING'
-        ? BATTLE_ZONE_INITIAL_RADIUS_M
+        ? configuredRadius
         : getBattleZoneRadiusMeters(
           phaseEndsAt,
           settings.hidingSeconds,
           settings.chaseSeconds,
-          now
+          now,
+          configuredRadius
         )
       : null;
 
@@ -595,6 +597,28 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         <View style={styles.hudBadgeRight}>
           <Text style={styles.hudText}>게임 총시간: {totalRemainingSec}s</Text>
         </View>
+      </View>
+
+      {/* 마커 범례 */}
+      <View style={styles.legendBar}>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: '#3A8DFF' }]} />
+          <Text style={styles.legendText}>경찰</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: '#FF3B30' }]} />
+          <Text style={styles.legendText}>도둑</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: '#555' }]} />
+          <Text style={styles.legendText}>검거</Text>
+        </View>
+        {settings?.gameMode === 'BATTLE' && (
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: 'rgba(135,206,235,0.85)', borderWidth: 1, borderColor: 'rgba(135,206,235,1)' }]} />
+            <Text style={styles.legendText}>자기장</Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.contentArea}>
@@ -1439,5 +1463,29 @@ const styles = StyleSheet.create({
     color: '#1B5E20',
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  legendBar: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    gap: 12,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  legendText: {
+    color: '#fff',
+    fontSize: 10,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
 });
