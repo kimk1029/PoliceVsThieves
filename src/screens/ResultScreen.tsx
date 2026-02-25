@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -10,8 +10,11 @@ import {
   useWindowDimensions,
   ImageBackground,
   ScrollView,
+  Modal,
 } from 'react-native';
 import { Player, GameResult, RoomSettings } from '../types/game.types';
+import { GpsStats } from '../hooks/useGpsStats';
+import { adService } from '../services/ads/AdService';
 
 interface ResultScreenProps {
   result: GameResult | null;
@@ -19,6 +22,7 @@ interface ResultScreenProps {
   settings: RoomSettings | null;
   gameStartAt: number | null;
   gameEndsAt: number | null;
+  myGpsStats?: GpsStats | null;
   onReturnToLobby: () => void;
 }
 
@@ -28,8 +32,10 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
   settings,
   gameStartAt,
   gameEndsAt,
+  myGpsStats,
   onReturnToLobby,
 }) => {
+  const [showMyStats, setShowMyStats] = useState(false);
   const winner = result?.winner ?? 'POLICE';
   // 승리 팀에 따른 테마 색상 및 라벨 설정
   const isPoliceWin = winner === 'POLICE';
@@ -271,9 +277,26 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
             </View>
           </View>
 
+          {/* 나의 결과 보기 버튼 */}
+          {myGpsStats != null && (
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => setShowMyStats(true)}
+              style={styles.myStatsButtonWrapper}
+            >
+              <View style={styles.myStatsButtonShadow} />
+              <View style={styles.myStatsButtonFront}>
+                <Text style={styles.myStatsButtonText}>📊 나의 결과 보기</Text>
+              </View>
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity
             activeOpacity={0.8}
-            onPress={onReturnToLobby}
+            onPress={() => {
+              const shown = adService.showInterstitial(onReturnToLobby);
+              if (!shown) onReturnToLobby();
+            }}
             style={styles.returnButtonWrapper}
           >
             <View style={styles.returnButtonShadow} />
@@ -283,6 +306,61 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
           </TouchableOpacity>
         </ScrollView>
       </ImageBackground>
+
+      {/* GPS 통계 팝업 */}
+      <Modal visible={showMyStats} transparent animationType="fade">
+        <View style={styles.statsModalBackdrop}>
+          <View style={styles.statsModalCard}>
+            <View style={styles.statsModalHeader}>
+              <Text style={styles.statsModalTitle}>📊 나의 활동 기록</Text>
+              <TouchableOpacity onPress={() => setShowMyStats(false)}>
+                <Text style={styles.statsModalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.statsGrid}>
+              <View style={styles.statsItem}>
+                <Text style={styles.statsIcon}>🗺️</Text>
+                <Text style={styles.statsValue}>
+                  {myGpsStats && myGpsStats.distanceM >= 1000
+                    ? `${(myGpsStats.distanceM / 1000).toFixed(2)} km`
+                    : `${Math.round(myGpsStats?.distanceM ?? 0)} m`}
+                </Text>
+                <Text style={styles.statsLabel}>이동 거리</Text>
+              </View>
+
+              <View style={[styles.statsItem, styles.statsItemMiddle]}>
+                <Text style={styles.statsIcon}>⚡</Text>
+                <Text style={styles.statsValue}>
+                  {(myGpsStats?.maxSpeedKmh ?? 0).toFixed(1)}
+                  <Text style={styles.statsUnit}> km/h</Text>
+                </Text>
+                <Text style={styles.statsLabel}>최고 속도</Text>
+              </View>
+
+              <View style={styles.statsItem}>
+                <Text style={styles.statsIcon}>👟</Text>
+                <Text style={styles.statsValue}>
+                  {(myGpsStats?.estimatedSteps ?? 0).toLocaleString()}
+                </Text>
+                <Text style={styles.statsLabel}>추정 걸음수</Text>
+              </View>
+            </View>
+
+            <Text style={styles.statsNote}>
+              * 걸음수는 GPS 거리 기반 추정값입니다 (평균 보폭 0.75m)
+            </Text>
+
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => setShowMyStats(false)}
+              style={styles.statsCloseButton}
+            >
+              <Text style={styles.statsCloseButtonText}>닫기</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -449,6 +527,135 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '900',
+    fontFamily: pixelFont,
+    letterSpacing: 2,
+  },
+
+  // 나의 결과 보기 버튼
+  myStatsButtonWrapper: {
+    width: '100%',
+    height: 52,
+    marginTop: 16,
+    marginBottom: 8,
+    position: 'relative',
+  },
+  myStatsButtonShadow: {
+    position: 'absolute',
+    top: 5,
+    left: 5,
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#003333',
+  },
+  myStatsButtonFront: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#00C8A0',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  myStatsButtonText: {
+    color: '#000',
+    fontSize: 15,
+    fontWeight: '800',
+    fontFamily: pixelFont,
+    letterSpacing: 1,
+  },
+
+  // GPS 통계 팝업 모달
+  statsModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.82)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  statsModalCard: {
+    width: '100%',
+    backgroundColor: '#0D0D1A',
+    borderWidth: 3,
+    borderColor: '#00C8A0',
+    padding: 0,
+    overflow: 'hidden',
+  },
+  statsModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#00C8A0',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  statsModalTitle: {
+    color: '#000',
+    fontSize: 16,
+    fontWeight: '900',
+    fontFamily: pixelFont,
+    letterSpacing: 1,
+  },
+  statsModalClose: {
+    color: '#000',
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    paddingHorizontal: 12,
+    paddingVertical: 24,
+  },
+  statsItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statsItemMiddle: {
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: 'rgba(0,200,160,0.3)',
+  },
+  statsIcon: {
+    fontSize: 28,
+    marginBottom: 8,
+  },
+  statsValue: {
+    color: '#00C8A0',
+    fontSize: 22,
+    fontWeight: '900',
+    fontFamily: pixelFont,
+    textAlign: 'center',
+  },
+  statsUnit: {
+    fontSize: 12,
+    fontWeight: '400',
+  },
+  statsLabel: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 11,
+    fontFamily: pixelFont,
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  statsNote: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 10,
+    fontFamily: pixelFont,
+    textAlign: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    lineHeight: 16,
+  },
+  statsCloseButton: {
+    backgroundColor: '#1A1A2E',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,200,160,0.3)',
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  statsCloseButtonText: {
+    color: '#00C8A0',
+    fontSize: 14,
+    fontWeight: '700',
     fontFamily: pixelFont,
     letterSpacing: 2,
   },

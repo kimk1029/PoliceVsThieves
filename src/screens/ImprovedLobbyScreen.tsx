@@ -96,9 +96,18 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
     }
   }, [isConnected, showReconnectingModal]);
 
+  // 게임 시작 감지: App.tsx의 직접 navigate가 primary, 이건 fallback
+  const navigatedToGameRef = useRef(false);
   useEffect(() => {
     if (!suppressAutoNavigate && status && status !== 'LOBBY' && roomId) {
-      onNavigate('game');
+      if (!navigatedToGameRef.current) {
+        navigatedToGameRef.current = true;
+        console.log('[Lobby] Auto-navigate to game', { status, roomId });
+        onNavigate('game');
+      }
+    }
+    if (status === 'LOBBY' || !status) {
+      navigatedToGameRef.current = false;
     }
   }, [status, roomId, onNavigate, suppressAutoNavigate]);
 
@@ -243,7 +252,9 @@ export const ImprovedLobbyScreen: React.FC<ImprovedLobbyScreenProps> = ({
       }
     };
   }, []);
-  if (roomId && (status === 'LOBBY' || !status)) {
+  // roomId가 있으면 항상 LobbyView 표시 (게임 시작 후 잠깐 MainEntryView가 보이는 문제 방지)
+  // status가 HIDING/CHASE인 경우엔 곧 game 화면으로 이동하므로 LobbyView를 유지해도 됨
+  if (roomId) {
     return (
       <LobbyView
         roomId={roomId}

@@ -22,6 +22,7 @@ class AdService {
   private interstitialAd: any = null;
   private isAdLoaded = false;
   private isAdLoading = false;
+  private onInterstitialClosed: (() => void) | null = null;
 
   /**
    * 전면 광고 초기화 및 로드
@@ -68,7 +69,10 @@ class AdService {
         console.log('[AdService] Interstitial ad closed');
         this.isAdLoaded = false;
         this.isAdLoading = false;
-        // 광고를 닫은 후 새로운 광고 로드
+        if (this.onInterstitialClosed) {
+          this.onInterstitialClosed();
+          this.onInterstitialClosed = null;
+        }
         this.loadInterstitial();
       });
 
@@ -93,9 +97,10 @@ class AdService {
 
   /**
    * 전면 광고 표시
-   * @returns 광고가 표시되었는지 여부
+   * @param onClosed 광고를 닫은 후 호출할 콜백 (로비 이동 등)
+   * @returns 광고가 표시되었는지 여부. false면 onClosed는 호출하지 않음.
    */
-  showInterstitial(): boolean {
+  showInterstitial(onClosed?: () => void): boolean {
     if (!InterstitialAd) {
       console.warn('[AdService] AdMob module not available');
       return false;
@@ -103,19 +108,23 @@ class AdService {
 
     try {
       if (this.interstitialAd && this.isAdLoaded) {
+        this.onInterstitialClosed = onClosed ?? null;
         this.interstitialAd.show();
         this.isAdLoaded = false;
         return true;
-      } else {
-        console.log('[AdService] Interstitial ad not ready, loading...');
-        // 광고가 준비되지 않았으면 로드 시도
-        if (!this.isAdLoading) {
-          this.loadInterstitial();
-        }
-        return false;
       }
+      if (onClosed) {
+        this.onInterstitialClosed = null;
+      }
+      if (!this.isAdLoading) {
+        this.loadInterstitial();
+      }
+      return false;
     } catch (error) {
       console.warn('[AdService] Failed to show interstitial ad:', error);
+      if (onClosed) {
+        this.onInterstitialClosed = null;
+      }
       return false;
     }
   }

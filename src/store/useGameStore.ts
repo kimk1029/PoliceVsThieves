@@ -100,10 +100,11 @@ export const useGameStore = create<GameStore>((set) => ({
 
   addChatMessage: (message) =>
     set((state) => {
-      console.log('[GameStore] Adding chat message:', message);
-      console.log('[GameStore] Current messages count:', state.chatMessages.length);
+      const hasId = message && typeof (message as any).messageId === 'string';
+      if (hasId && state.chatMessages.some((m: any) => m.messageId === (message as any).messageId)) {
+        return state;
+      }
       const newMessages = [...state.chatMessages, message];
-      console.log('[GameStore] New messages count:', newMessages.length);
       return { chatMessages: newMessages };
     }),
 

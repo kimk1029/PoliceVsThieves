@@ -11,6 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useGameStore } from './src/store/useGameStore';
 import { usePlayerStore } from './src/store/usePlayerStore';
 import { useGameLogic } from './src/hooks/useGameLogic';
+import { useGpsStats, GpsStats } from './src/hooks/useGpsStats';
 import { adService } from './src/services/ads/AdService';
 import KeepAwake from 'react-native-keep-awake';
 import Geolocation from 'react-native-geolocation-service';
@@ -26,6 +27,8 @@ const App = (): React.JSX.Element => {
   const [screen, setScreen] = useState('splash'); // Start with splash
   const [screenParams, setScreenParams] = useState<any>({});
   const [suppressLobbyAutoNavigate, setSuppressLobbyAutoNavigate] = useState(false);
+  // 로비 복귀 중 game:state로 game 화면 재진입 방지
+  const suppressGameNavRef = useRef(false);
 
   // ✅ WebSocket/게임 로직은 앱 전체에서 1번만 생성해서 유지
   const gameLogic = useGameLogic();
@@ -174,6 +177,8 @@ const App = (): React.JSX.Element => {
   }, []);
 
   const returnToLobby = useCallback(async () => {
+    // 로비 복귀 중 game:state 수신으로 다시 game 화면으로 튕기는 것 방지
+    suppressGameNavRef.current = true;
     setSuppressLobbyAutoNavigate(true);
     // 로비로 먼저 이동해 게임 화면 언마운트
     setScreen('lobby');
@@ -181,11 +186,12 @@ const App = (): React.JSX.Element => {
     // 방에서 나가고(서버에 leave), 위치 트래킹도 중단되도록 처리
     await gameLogic.leaveRoom();
 
-    // 핵심: status/roomId가 남아있으면 ImprovedLobbyScreen에서 status !== 'LOBBY' 감지로
-    // 다시 game 화면으로 튕길 수 있어서, 로비 복귀 시에는 store를 리셋해야 합니다.
+    // 핵심: status/roomId가 남아있으면 다시 game 화면으로 튕길 수 있어서 store 리셋
     useGameStore.getState().reset();
     startedLocationRef.current = false;
     setSuppressLobbyAutoNavigate(false);
+    // 리셋 완료 후 suppress 해제
+    suppressGameNavRef.current = false;
   }, [gameLogic]);
 
   const confirmEndGame = useCallback(() => {
@@ -195,15 +201,15 @@ const App = (): React.JSX.Element => {
     ]);
   }, [returnToLobby]);
 
-  const navigate = (newScreen: string, params?: any) => {
+  const navigate = useCallback((newScreen: string, params?: any) => {
     setScreen(newScreen);
     setScreenParams(params || {});
-  };
+  }, []);
 
   const { team, location, playerId, nickname } = usePlayerStore();
-  const { status, phaseEndsAt, players, settings, result } = useGameStore();
+  const { status, phaseEndsAt, players, settings, result, roomId, setRoomInfo } = useGameStore();
 
-  // AdMob SDK 초기화 (배너/전면 공통 - 앱 시작 시 한 번 호출하면 배너 로드 안정화)
+  // AdMob SDK 초기화 (배너/전면 공통) + 전면 광고(로비 복귀 시 동영상) 프리로드
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -212,7 +218,10 @@ const App = (): React.JSX.Element => {
         if (mobileAds && typeof mobileAds === 'function') {
           const init = mobileAds().initialize();
           if (init?.then) await init;
-          if (!cancelled) console.log('[App] AdMob initialized');
+          if (!cancelled) {
+            console.log('[App] AdMob initialized');
+            adService.initializeInterstitial();
+          }
         }
       } catch (e) {
         if (!cancelled) console.warn('[App] AdMob init (non-fatal):', e);
@@ -220,6 +229,22 @@ const App = (): React.JSX.Element => {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // ─────────────────────────────────────────────────────────────
+  // 게임 시작 감지: status가 HIDING/CHASE가 되면 무조건 game 화면으로 이동
+  // ImprovedLobbyScreen의 navigate 콜백에 의존하지 않고 App 레벨에서 직접 처리
+  // ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (suppressGameNavRef.current) return;
+    if (
+      screen === 'lobby' &&
+      (status === 'HIDING' || status === 'CHASE') &&
+      roomId
+    ) {
+      console.log('[App] Game started detected, navigating to game screen', { status, roomId });
+      setScreen('game');
+    }
+  }, [status, screen, roomId]);
 
   // 게임 종료 시 세션 정리
   useEffect(() => {
@@ -262,6 +287,27 @@ const App = (): React.JSX.Element => {
   const hidingEndsAtRef = useRef<number | null>(null);
   const gameStartAtRef = useRef<number | null>(null);
   const gameEndsAtRef = useRef<number | null>(null);
+  const timeUpFallbackAppliedRef = useRef(false);
+
+  // GPS stats tracking
+  const isGameActive = status === 'HIDING' || status === 'CHASE';
+  const { getStats, onLocationUpdate, resetStats } = useGpsStats(isGameActive);
+  const [finalGpsStats, setFinalGpsStats] = useState<GpsStats | null>(null);
+
+  useEffect(() => {
+    if (!location || !isGameActive) return;
+    onLocationUpdate(location);
+  }, [location, isGameActive, onLocationUpdate]);
+
+  useEffect(() => {
+    if (status === 'END') {
+      setFinalGpsStats(getStats());
+    }
+    if (status === 'HIDING') {
+      resetStats();
+      setFinalGpsStats(null);
+    }
+  }, [status]);
 
   useEffect(() => {
     if (status === 'HIDING' && phaseEndsAt) {
@@ -285,10 +331,38 @@ const App = (): React.JSX.Element => {
 
     if (status === 'LOBBY' || status === 'END') {
       hidingEndsAtRef.current = null;
-      // gameStartAtRef.current = null; // 결과 화면 계산을 위해 유지
-      // gameEndsAtRef.current = null; // 결과 화면 계산을 위해 유지
+      timeUpFallbackAppliedRef.current = false;
+    }
+    if (status === 'HIDING') {
+      timeUpFallbackAppliedRef.current = false;
     }
   }, [status, phaseEndsAt, settings?.hidingSeconds, settings?.chaseSeconds]);
+
+  // 게임 시간 만료 후에도 서버에서 game:end가 오지 않으면 로컬에서 결과 화면으로 전환 (폴백)
+  useEffect(() => {
+    if (status !== 'CHASE' || screen !== 'game') return;
+    const endsAt = gameEndsAtRef.current;
+    if (endsAt == null) return;
+    const graceMs = 2000;
+    if (now <= endsAt + graceMs) return;
+    if (timeUpFallbackAppliedRef.current) return;
+    timeUpFallbackAppliedRef.current = true;
+    console.log('[App] Game time expired locally, showing result (fallback)');
+    setRoomInfo({
+      status: 'END',
+      result: {
+        winner: 'THIEF',
+        reason: '시간 종료! 도둑이 생존했습니다.',
+        stats: {
+          totalThieves: 0,
+          capturedCount: 0,
+          jailedCount: 0,
+          survivedThieves: [],
+          captureHistory: [],
+        },
+      },
+    });
+  }, [status, screen, now, setRoomInfo]);
 
   const hidingRemainingSec = hidingEndsAtRef.current
     ? Math.max(
@@ -334,6 +408,7 @@ const App = (): React.JSX.Element => {
           settings={settings}
           gameStartAt={gameStartAtRef.current}
           gameEndsAt={gameEndsAtRef.current}
+          myGpsStats={finalGpsStats}
           onReturnToLobby={returnToLobby}
         />
       );
@@ -360,9 +435,9 @@ const App = (): React.JSX.Element => {
       settings={settings}
       gameStartAt={gameStartAtRef.current}
       gameEndsAt={gameEndsAtRef.current}
+      myGpsStats={finalGpsStats}
       onReturnToLobby={returnToLobby}
     />
   );
 };
-
 export default App;

@@ -60,29 +60,19 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     animationDuration?: number;
   } | null>(null);
   const { team, location, playerId, nickname } = usePlayerStore();
-  const { status, players, basecamp, fixedBasecamp, settings, phaseEndsAt, setFixedBasecampFromCurrentLocation } =
+  const { status, players, basecamp, fixedBasecamp, settings, phaseEndsAt } =
     useGameStore();
   const playersList = Array.from(players.values());
 
-  // BATTLE 모드: 방장의 첫 위치를 공통 베이스캠프로 사용 (한 번 설정되면 고정)
+  // 서버에서 방장의 위치를 BC로 설정하여 game:state로 받아옴 (fixedBasecamp)
+  // 서버 basecamp 수신 전 로컬 폴백: 방장의 첫 유효 위치를 임시 BC로 사용
   const [hostBasecamp, setHostBasecamp] = useState<{ lat: number; lng: number } | null>(null);
 
-  // 현재 위치가 인식되면 그 위치를 베이스캠프로 고정 (BASIC 모드만)
-  // BATTLE 모드: 방장 위치 기준이므로 여기서 덮어쓰지 않음
   useEffect(() => {
     if (status == null || status === 'END') return;
-    if (settings?.gameMode === 'BATTLE') return;
-    if (!location || typeof location.lat !== 'number' || typeof location.lng !== 'number') return;
-    if (!isFinite(location.lat) || !isFinite(location.lng)) return;
-    if (location.lat === 0 && location.lng === 0) return;
-    setFixedBasecampFromCurrentLocation(location.lat, location.lng);
-  }, [status, settings?.gameMode, location?.lat, location?.lng, setFixedBasecampFromCurrentLocation]);
-
-  // BATTLE 모드: 방장의 첫 유효 위치를 베이스캠프로 고정 (모든 플레이어 동일)
-  useEffect(() => {
-    if (status == null || status === 'END') return;
-    if (settings?.gameMode !== 'BATTLE') return;
-    if (hostBasecamp) return; // 이미 설정됨
+    if (hostBasecamp) return;
+    // fixedBasecamp가 이미 서버에서 받아져 있으면 로컬 폴백 불필요
+    if (fixedBasecamp && fixedBasecamp.lat !== 0 && fixedBasecamp.lng !== 0) return;
     const host = playersList.find((p) => (p as any).role === 'HOST');
     if (!host) return;
     const isMeHost = host.playerId === playerId;
@@ -91,18 +81,15 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     if (!isFinite(hostLoc.lat) || !isFinite(hostLoc.lng)) return;
     if (hostLoc.lat === 0 && hostLoc.lng === 0) return;
     setHostBasecamp({ lat: hostLoc.lat, lng: hostLoc.lng });
-  }, [status, settings?.gameMode, playersList, playerId, location?.lat, location?.lng, hostBasecamp]);
+  }, [status, fixedBasecamp, playersList, playerId, location?.lat, location?.lng, hostBasecamp]);
 
-  // 게임 종료 시 host basecamp 리셋
   useEffect(() => {
     if (status === 'END') setHostBasecamp(null);
   }, [status]);
 
-  // 베이스캠프 좌표: BATTLE = 서버 basecamp 우선(모든 플레이어 동일), 없으면 방장 위치 폴백. BASIC = 고정/서버 basecamp
-  const basecampSource =
-    settings?.gameMode === 'BATTLE'
-      ? (fixedBasecamp ?? basecamp ?? hostBasecamp)
-      : fixedBasecamp ?? basecamp;
+  // 베이스캠프 좌표: 모든 모드에서 서버 basecamp 우선 (방장 시작 위치로 설정됨)
+  // 없으면 fixedBasecamp(첫 인식 위치) → hostBasecamp(방장 위치 로컬 폴백) 순
+  const basecampSource = fixedBasecamp ?? basecamp ?? hostBasecamp;
   const basecampCoord =
     basecampSource &&
       typeof basecampSource.lat === 'number' &&
@@ -360,10 +347,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     ? Math.max(0, Math.ceil((gameEndsAt - now) / 1000))
     : 0;
 
-  // 플레이가능 영역(자기장): 베이스캠프 중심 실제 거리 1km(미터), HIDING/CHASE 모두 표시. 전체시간 40% 후 축소
+  // 자기장(플레이 영역): BATTLE 모드일 때만 활성화
   const configuredRadius = settings?.battleZoneRadiusM ?? BATTLE_ZONE_DEFAULT_RADIUS_M;
   const battleZoneRadius =
-    basecampCoord &&
+    settings?.gameMode === 'BATTLE' &&
+      basecampCoord &&
       (status === 'HIDING' || status === 'CHASE') &&
       phaseEndsAt != null &&
       settings?.hidingSeconds != null &&
@@ -549,7 +537,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         return;
       }
 
-      gameLogic.attemptCapture(thiefId);
+      gameLogic.attemptCapture(thiefId, 'qr');
       setQrScannerVisible(false);
       isProcessingScanRef.current = false;
     },

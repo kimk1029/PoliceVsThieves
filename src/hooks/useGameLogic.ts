@@ -916,16 +916,15 @@ export const useGameLogic = () => {
   const startGame = useCallback(async () => {
     if (!isConnected || !roomId || !playerId) return;
     const payload: Record<string, unknown> = {};
-    // BATTLE 모드: 방장의 첫 위치를 공통 베이스캠프로 서버에 전달 (모든 플레이어가 동일한 자기장 중심 사용)
-    if (settings?.gameMode === 'BATTLE') {
-      try {
-        const loc = myLocation || (await locationService.getCurrentLocation());
-        if (loc && typeof loc.lat === 'number' && typeof loc.lng === 'number' && isFinite(loc.lat) && isFinite(loc.lng)) {
-          payload.basecamp = { lat: loc.lat, lng: loc.lng };
-        }
-      } catch (e) {
-        console.warn('[GameLogic] Could not get host location for BATTLE basecamp:', e);
+    // 모든 모드: 방장의 현재 위치를 베이스캠프로 서버에 전달 (BC는 항상 방장 시작 위치)
+    try {
+      const loc = myLocation || (await locationService.getCurrentLocation());
+      if (loc && typeof loc.lat === 'number' && typeof loc.lng === 'number' && isFinite(loc.lat) && isFinite(loc.lng)) {
+        payload.basecamp = { lat: loc.lat, lng: loc.lng };
+        console.log('[GameLogic] Host basecamp set for game start:', { lat: loc.lat, lng: loc.lng });
       }
+    } catch (e) {
+      console.warn('[GameLogic] Could not get host location for basecamp:', e);
     }
     wsClient.send({
       type: 'game:start',
@@ -933,7 +932,7 @@ export const useGameLogic = () => {
       roomId,
       payload,
     });
-  }, [isConnected, roomId, playerId, wsClient, settings?.gameMode, myLocation, locationService]);
+  }, [isConnected, roomId, playerId, wsClient, myLocation, locationService]);
 
   // 로비 설정 변경(방장 전용)
   const updateRoomSettings = useCallback(
@@ -1138,7 +1137,7 @@ export const useGameLogic = () => {
 
   // 체포 시도
   const attemptCapture = useCallback(
-    (thiefId: string) => {
+    (thiefId: string, source: 'button' | 'qr' = 'button') => {
       if (!isConnected || !roomId || team !== 'POLICE' || !playerId) return;
 
       wsClient.send({
@@ -1147,6 +1146,7 @@ export const useGameLogic = () => {
         roomId: roomId,
         payload: {
           thiefId,
+          source,
         },
       });
     },
