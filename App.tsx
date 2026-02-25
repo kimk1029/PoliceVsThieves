@@ -351,8 +351,8 @@ const App = (): React.JSX.Element => {
     setRoomInfo({
       status: 'END',
       result: {
-        winner: 'THIEF',
-        reason: '시간 종료! 도둑이 생존했습니다.',
+        winner: 'POLICE',
+        reason: '시간 종료! 경찰 승리!',
         stats: {
           totalThieves: 0,
           capturedCount: 0,
