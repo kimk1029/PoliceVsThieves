@@ -6,12 +6,12 @@ import {
   StatusBar,
   TouchableOpacity,
   Platform,
-  SafeAreaView,
   useWindowDimensions,
   ImageBackground,
   ScrollView,
   Modal,
 } from 'react-native';
+import { useSafeAreaWithFallback } from '../hooks/useSafeAreaWithFallback';
 import { Player, GameResult, RoomSettings } from '../types/game.types';
 import { GpsStats } from '../hooks/useGpsStats';
 import { adService } from '../services/ads/AdService';
@@ -151,9 +151,11 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
   const policeWinBg = require('../assets/images/police-win-bg.jpg');
   const bgSource = winner === 'THIEF' ? thievesWinBg : policeWinBg;
 
+  const { safeTop, safeBottom } = useSafeAreaWithFallback();
+
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+    <View style={[styles.container, { paddingTop: safeTop, paddingBottom: safeBottom }]}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent={false} />
       <ImageBackground
         source={bgSource}
         style={styles.resultBody}
@@ -361,7 +363,7 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 };
 

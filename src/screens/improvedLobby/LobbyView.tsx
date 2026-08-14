@@ -2,7 +2,6 @@ import React from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   Text,
@@ -12,6 +11,7 @@ import {
   Platform,
   StyleSheet,
 } from 'react-native';
+import { useSafeAreaWithFallback } from '../../hooks/useSafeAreaWithFallback';
 import Clipboard from '@react-native-clipboard/clipboard';
 import Slider from '@react-native-community/slider';
 
@@ -89,6 +89,8 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     [settings, savedSettings]
   );
 
+  const { safeTop, safeBottom } = useSafeAreaWithFallback();
+
   const openSettings = () => {
     const merged = displaySettings || settings || savedSettings;
     setHidingSecondsDraft(merged?.hidingSeconds ?? 60);
@@ -140,8 +142,8 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   }, []);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#120458" />
+    <View style={[styles.container, { paddingTop: safeTop, paddingBottom: safeBottom }]}>
+      <StatusBar barStyle="light-content" backgroundColor="#120458" translucent={false} />
 
       <View style={styles.lobbyHeader}>
         <View style={styles.headerTopRow}>
@@ -501,7 +503,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 };
 

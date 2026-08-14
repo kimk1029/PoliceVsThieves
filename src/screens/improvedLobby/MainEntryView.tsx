@@ -5,13 +5,13 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaWithFallback } from '../../hooks/useSafeAreaWithFallback';
 
 import { PixelButton } from '../../components/pixel/PixelButton';
 import { PixelCard } from '../../components/pixel/PixelCard';
@@ -63,14 +63,15 @@ export const MainEntryView: React.FC<MainEntryViewProps> = ({
   showReconnectingModal,
 }) => {
   const [showHelp, setShowHelp] = React.useState(false);
+  const { safeTop, safeBottom } = useSafeAreaWithFallback();
   return (
     <ImageBackground
       source={require('../../assets/images/bgtitle.jpg')}
       style={styles.container}
       imageStyle={styles.backgroundImage}
     >
-      <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="light-content" backgroundColor="#120458" />
+      <View style={[styles.safeArea, { paddingTop: safeTop, paddingBottom: safeBottom }]}>
+        <StatusBar barStyle="light-content" backgroundColor="#120458" translucent={false} />
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.mainWrapper}
@@ -236,7 +237,7 @@ export const MainEntryView: React.FC<MainEntryViewProps> = ({
             })()}
           </View>
         </KeyboardAvoidingView>
-      </SafeAreaView>
+      </View>
     </ImageBackground>
   );
 };

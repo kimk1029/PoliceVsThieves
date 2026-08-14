@@ -1,15 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
+import { ScrollView, 
   View,
   Text,
   StyleSheet,
   StatusBar,
-  SafeAreaView,
   Animated,
   Alert,
   TouchableOpacity,
   Platform,
 } from 'react-native';
+import { useSafeAreaWithFallback } from '../hooks/useSafeAreaWithFallback';
 import Geolocation from 'react-native-geolocation-service';
 import {
   NaverMapCircleOverlay,
@@ -570,272 +570,158 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     return () => anim.stop();
   }, [showHidingCountdown, pulse]);
 
+
+  // 하단 패널 애니메이션 상태
+  const [isPanelExpanded, setIsPanelExpanded] = useState(false);
+  const panelHeightAnim = useRef(new Animated.Value(0)).current;
+
+  const togglePanel = useCallback(() => {
+    Animated.spring(panelHeightAnim, {
+      toValue: isPanelExpanded ? 0 : 350,
+      useNativeDriver: false,
+    }).start();
+    setIsPanelExpanded(!isPanelExpanded);
+  }, [isPanelExpanded, panelHeightAnim]);
+  
+  // 맵 컨테이너 실제 크기 (레이더 링/암 계산용)
+  const [mapContainerSize, setMapContainerSize] = useState({ width: 0, height: 0 });
+
+  // 레이더 회전 애니메이션
+  const radarRotation = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.timing(radarRotation, {
+        toValue: 1,
+        duration: 3500,
+        useNativeDriver: true,
+      })
+    ).start();
+  }, [radarRotation]);
+  // 메인 암과 trailing 잔상 (각도 오프셋)
+  const radarRotateStr = radarRotation.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  const radarTrail1   = radarRotation.interpolate({ inputRange: [0, 1], outputRange: ['-12deg', '348deg'] });
+  const radarTrail2   = radarRotation.interpolate({ inputRange: [0, 1], outputRange: ['-25deg', '335deg'] });
+  const radarTrail3   = radarRotation.interpolate({ inputRange: [0, 1], outputRange: ['-40deg', '320deg'] });
+
+  // 내 위치 블립 펄스 (레이더 타겟 표시)
+  const blipPulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(blipPulse, { toValue: 1.4, duration: 600, useNativeDriver: true }),
+        Animated.timing(blipPulse, { toValue: 1, duration: 600, useNativeDriver: true }),
+      ])
+    ).start();
+  }, [blipPulse]);
+
   const bg = isPolice ? styles.containerPolice : styles.containerThief;
   const smoothMyCoordVal = myLocationCoord ? getSmoothCoord('me', myLocationCoord) : null;
 
-  return (
-    <SafeAreaView style={[styles.container, bg]}>
-      <StatusBar barStyle="light-content" backgroundColor={isPolice ? '#001B44' : '#2D0B3A'} />
+  const { safeTop, safeBottom } = useSafeAreaWithFallback();
 
-      {/* HUD */}
+  // 도둑: 경찰 근접 시 위험 경고 (레이더 사이드 빨간 깜빡임)
+  const proximityRadius = settings?.proximityRadiusMeters ?? 30;
+  const isPoliceNear = !isPolice && myLocationCoord && polices.some((p: any) => {
+    const loc = p.location;
+    if (!loc || typeof loc.lat !== 'number' || typeof loc.lng !== 'number') return false;
+    const dist = calculateDistanceMeters(myLocationCoord.latitude, myLocationCoord.longitude, loc.lat, loc.lng);
+    return dist <= proximityRadius;
+  });
+  const dangerFlash = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!isPoliceNear) return;
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(dangerFlash, { toValue: 1, duration: 400, useNativeDriver: true }),
+        Animated.timing(dangerFlash, { toValue: 0, duration: 400, useNativeDriver: true }),
+      ])
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [isPoliceNear, dangerFlash]);
+  const dangerOpacity = dangerFlash.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] });
+
+  return (
+    <View style={[styles.container, bg, { paddingTop: safeTop, paddingBottom: safeBottom }]}>
+      <StatusBar barStyle="light-content" backgroundColor={isPolice ? '#001B44' : '#2D0B3A'} translucent={false} />
+
+      {/* HUD: 역할 배지 + 게임끝내기(오른쪽 위 작게) */}
       <View style={[styles.hud, isPolice ? styles.hudPolice : styles.hudThief]}>
         <View style={[styles.hudBadge, isPolice ? styles.hudBadgePolice : styles.hudBadgeThief]}>
           <Text style={[styles.hudText, !isPolice && styles.hudTextDark]}>{roleLabel}</Text>
         </View>
-        <View style={styles.hudBadgeRight}>
-          <Text style={styles.hudText}>게임 총시간: {totalRemainingSec}s</Text>
-        </View>
+        <TouchableOpacity style={styles.hudEndGameButton} onPress={onConfirmEndGame} activeOpacity={0.7}>
+          <Text style={styles.hudEndGameIcon}>➦</Text>
+          <Text style={styles.hudEndGameText}>게임끝내기</Text>
+        </TouchableOpacity>
       </View>
 
-      {/* 마커 범례 */}
-      <View style={styles.legendBar}>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: '#3A8DFF' }]} />
-          <Text style={styles.legendText}>경찰</Text>
+      {/* 남은시간 + 현황 카드 (탭 시 하단 시트 열림) */}
+      <TouchableOpacity style={styles.statusCard} onPress={togglePanel} activeOpacity={0.9}>
+        <View style={styles.statusCardLeft}>
+          <Text style={styles.statusCardLabel}>남은 시간</Text>
+          <Text style={styles.statusCardTime}>
+            {Math.floor(totalRemainingSec / 60)}:{(totalRemainingSec % 60).toString().padStart(2, '0')}
+          </Text>
         </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: '#FF3B30' }]} />
-          <Text style={styles.legendText}>도둑</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: '#555' }]} />
-          <Text style={styles.legendText}>검거</Text>
-        </View>
-        {settings?.gameMode === 'BATTLE' && (
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: 'rgba(135,206,235,0.85)', borderWidth: 1, borderColor: 'rgba(135,206,235,1)' }]} />
-            <Text style={styles.legendText}>자기장</Text>
+        <View style={styles.statusCardRight}>
+          <Text style={styles.statusCardLabel}>현황</Text>
+          <View style={styles.statusCardIndicators}>
+            <View style={[styles.statusIndicator, styles.statusIndicatorPolice]}>
+              <Text style={styles.statusIndicatorEmoji}>👮</Text>
+              <Text style={styles.statusIndicatorNum}>{polices.length}</Text>
+            </View>
+            <View style={[styles.statusIndicator, styles.statusIndicatorThief]}>
+              <Text style={styles.statusIndicatorEmoji}>🥷</Text>
+              <Text style={styles.statusIndicatorNum}>{thieves.filter((t: any) => t.thiefStatus?.state === 'FREE' && !(t as any).outOfZoneAt).length}</Text>
+            </View>
+            <View style={[styles.statusIndicator, styles.statusIndicatorCaptured]}>
+              <Text style={styles.statusIndicatorEmoji}>🔒</Text>
+              <Text style={styles.statusIndicatorNum}>{thieves.filter((t: any) => t.thiefStatus?.state === 'CAPTURED' || t.thiefStatus?.state === 'JAILED').length}</Text>
+            </View>
           </View>
-        )}
-      </View>
+        </View>
+      </TouchableOpacity>
 
-      <View style={styles.contentArea}>
-        {isPolice ? (
-          <>
-            <View style={styles.mapContainer}>
-              {hasLocationPermission ? (
-                <NaverMapView
-                  ref={mapRef}
-                  style={styles.map}
-                  isShowLocationButton={false}
-                  isZoomGesturesEnabled={false}
-                  isScrollGesturesEnabled={false}
-                  isTiltGesturesEnabled={false}
-                  isRotateGesturesEnabled={false}
-                  isUseTextureViewAndroid={true}
-                  onInitialized={() => setMapReady(true)}
-                  camera={camera ?? undefined}
-                  initialCamera={{ latitude: 37.5665, longitude: 126.978, zoom: 17 }}
-                >
-                  {/* 베이스캠프·자기장은 먼저 그려서 플레이어 마커가 위에 오도록 */}
-                  {basecampCoord ? (
-                    <NaverMapMarkerOverlay
-                      key="marker-basecamp"
-                      latitude={basecampCoord.latitude}
-                      longitude={basecampCoord.longitude}
-                      width={28}
-                      height={28}
-                      anchor={{ x: 0.5, y: 1 }}
-                    >
-                      <View collapsable={false} style={styles.basecampMarkerIcon}>
-                        <Text style={styles.basecampMarkerEmoji}>BC</Text>
-                      </View>
-                    </NaverMapMarkerOverlay>
-                  ) : null}
-                  {basecampCoord && battleZoneRadius != null ? (
-                    <NaverMapCircleOverlay
-                      key="battle-zone"
-                      latitude={basecampCoord.latitude}
-                      longitude={basecampCoord.longitude}
-                      radius={battleZoneRadius}
-                      color="rgba(135, 206, 235, 0.28)"
-                      outlineWidth={3}
-                      outlineColor="rgba(135, 206, 235, 0.85)"
-                    />
-                  ) : null}
-                  {smoothMyCoordVal ? (
-                    <NaverMapMarkerOverlay
-                      key="marker-me"
-                      latitude={smoothMyCoordVal.latitude}
-                      longitude={smoothMyCoordVal.longitude}
-                      width={25}
-                      height={25}
-                      anchor={{ x: 0.5, y: 1 }}
-                    >
-                      <View collapsable={false} style={styles.policeMarkerIcon}>
-                        <Text style={styles.markerEmoji}>👮</Text>
-                      </View>
-                    </NaverMapMarkerOverlay>
-                  ) : null}
-                  {policeVisibleThiefCoords.map((thief) => {
-                    const isCaptured = thief.state === 'CAPTURED';
-                    const isJailed = thief.state === 'JAILED';
-                    const borderColor = isCaptured
-                      ? '#666'
-                      : isJailed
-                        ? '#FFAA00'
-                        : '#F9F871';
-                    const smoothCoord = getSmoothCoord(`player-${thief.playerId}`, {
-                      latitude: thief.latitude,
-                      longitude: thief.longitude,
-                    });
+      {/* 메인 맵 컨테이너: 원형 레이더 스코프 */}
+      <View
+        style={styles.fullScreenMapContainer}
+        onLayout={(e) => {
+          const { width, height } = e.nativeEvent.layout;
+          if (width > 0 && height > 0) setMapContainerSize({ width, height });
+        }}
+      >
+        {(() => {
+          const W = mapContainerSize.width || 1;
+          const H = mapContainerSize.height || 1;
+          const circleSize = Math.min(W, H) * 0.88;
+          if (circleSize < 50) return null;
+          const radius = circleSize / 2;
 
-                    return (
-                      <NaverMapMarkerOverlay
-                        key={`marker-thief-${thief.playerId}`}
-                        latitude={smoothCoord.latitude}
-                        longitude={smoothCoord.longitude}
-                        width={25}
-                        height={25}
-                        anchor={{ x: 0.5, y: 1 }}
-                      >
-                        <View
-                          collapsable={false}
-                          style={[
-                            styles.thiefMarkerIcon,
-                            { borderColor },
-                            isCaptured && styles.thiefMarkerIconCaptured,
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.markerEmoji,
-                              isCaptured && styles.markerEmojiCaptured,
-                            ]}
-                          >
-                            🦹
-                          </Text>
-                        </View>
-                      </NaverMapMarkerOverlay>
-                    );
-                  })}
-                  {policeVisiblePoliceCoords.map((police) => {
-                    const smoothCoord = getSmoothCoord(`player-${police.playerId}`, {
-                      latitude: police.latitude,
-                      longitude: police.longitude,
-                    });
-                    return (
-                      <NaverMapMarkerOverlay
-                        key={`marker-police-${police.playerId}`}
-                        latitude={smoothCoord.latitude}
-                        longitude={smoothCoord.longitude}
-                        width={25}
-                        height={25}
-                        anchor={{ x: 0.5, y: 1 }}
-                      >
-                        <View collapsable={false} style={styles.policeMarkerIcon}>
-                          <Text style={styles.markerEmoji}>👮</Text>
-                        </View>
-                      </NaverMapMarkerOverlay>
-                    );
-                  })}
-                </NaverMapView>
-              ) : (
-                <View style={styles.mapFallback}>
-                  <Text style={styles.mapPlaceholder}>🗺️ 지도</Text>
-                  <Text style={styles.mapSubText}>위치 권한이 필요합니다</Text>
-                </View>
-              )}
-            </View>
-
-            <View style={styles.listPanel}>
-              <Text style={styles.listTitle}>THIEVES</Text>
-              {thieves.length === 0 ? (
-                <Text style={styles.listEmpty}>도둑 없음</Text>
-              ) : (
-                <View style={styles.thievesListContainer}>
-                  {thieves.map((t: any) => {
-                    const isFree = t.thiefStatus?.state === 'FREE';
-                    const isCaptured = t.thiefStatus?.state === 'CAPTURED';
-                    const isJailed = t.thiefStatus?.state === 'JAILED';
-                    const isOutOfZone =
-                      t.thiefStatus?.state === 'OUT_OF_ZONE' || !!(t as any).outOfZoneAt;
-                    const canCapture = status === 'CHASE' && isFree && !isPoliceHiding;
-                    const canRelease = status === 'CHASE' && isCaptured && !isPoliceHiding;
-                    const canAction = canCapture || canRelease;
-                    const label = isCaptured
-                      ? '검거됨'
-                      : isJailed
-                        ? '감금됨'
-                        : isOutOfZone
-                          ? '탈락'
-                          : '자유';
-                    return (
-                      <TouchableOpacity
-                        key={t.playerId}
-                        disabled={!canAction}
-                        onPress={() => {
-                          if (canCapture) gameLogic.attemptCapture(t.playerId);
-                          if (canRelease) gameLogic.attemptRelease(t.playerId);
-                        }}
-                        style={[
-                          styles.listItem,
-                          styles.listItemGrid,
-                          !canAction && styles.listItemDisabled,
-                          canAction && styles.listItemClickable,
-                          isCaptured && styles.listItemCaptured,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.listItemText,
-                            isCaptured && styles.listItemTextCaptured,
-                          ]}
-                        >
-                          {t.nickname}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.listItemBadge,
-                            t.thiefStatus?.state === 'CAPTURED' && styles.listItemBadgeCaptured,
-                            t.thiefStatus?.state === 'JAILED' && styles.listItemBadgeJailed,
-                            (t.thiefStatus?.state === 'OUT_OF_ZONE' || (t as any).outOfZoneAt) &&
-                            styles.listItemBadgeOutOfZone,
-                            t.thiefStatus?.state === 'FREE' &&
-                            !(t as any).outOfZoneAt &&
-                            styles.listItemBadgeFree,
-                          ]}
-                        >
-                          {label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              )}
-              <Text style={styles.listHint}>
-                {isPoliceHiding
-                  ? '경찰 대기시간 진행 중'
-                  : status !== 'CHASE'
-                    ? '추격전 시작 후 검거 가능합니다'
-                    : '자유 상태의 도둑을 눌러 검거 시도'}
-              </Text>
-              <View style={styles.qrScanButtonWrap}>
-                <PixelButton
-                  text="QR 스캔 검거"
-                  variant="primary"
-                  size="medium"
-                  onPress={() => {
-                    isProcessingScanRef.current = false;
-                    setQrScannerSession((v) => v + 1);
-                    setQrScannerVisible(true);
-                  }}
-                  disabled={isPoliceHiding}
-                />
-              </View>
-            </View>
-          </>
-        ) : (
-          <>
-            <View style={styles.splitRow}>
-              <View style={[styles.splitSquare, styles.splitSquareLeft]}>
+          return (
+            <View style={styles.radarScopeWrapper}>
+              {/* 베젤: 레이더 화면 테두리 (원형 지도 감싸기) */}
+              <View style={[styles.radarBezel, { width: circleSize + 20, height: circleSize + 20, borderRadius: radius + 10, padding: 10 }]}>
+              <View style={[styles.radarScopeCircle, { width: circleSize, height: circleSize, borderRadius: radius }]}>
                 {hasLocationPermission ? (
                   <NaverMapView
                     ref={mapRef}
                     style={styles.map}
+                    mapType="Navi"
+                    isNightModeEnabled={true}
+                    layerGroups={{
+                      BUILDING: true,
+                      TRAFFIC: false,
+                      TRANSIT: false,
+                      BICYCLE: false,
+                      MOUNTAIN: false,
+                      CADASTRAL: false,
+                    }}
+                    lightness={-0.5}
+                    buildingHeight={0.5}
                     isShowLocationButton={false}
-                    isZoomGesturesEnabled={false}
-                    isScrollGesturesEnabled={false}
+                    isZoomGesturesEnabled={true}
+                    isScrollGesturesEnabled={true}
                     isTiltGesturesEnabled={false}
                     isRotateGesturesEnabled={false}
                     isUseTextureViewAndroid={true}
@@ -843,88 +729,94 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                     camera={camera ?? undefined}
                     initialCamera={{ latitude: 37.5665, longitude: 126.978, zoom: 17 }}
                   >
-                    {/* 베이스캠프·자기장은 먼저 그려서 플레이어 마커가 위에 오도록 */}
-                    {basecampCoord ? (
-                      <NaverMapMarkerOverlay
-                        key="marker-basecamp"
-                        latitude={basecampCoord.latitude}
-                        longitude={basecampCoord.longitude}
-                        width={28}
-                        height={28}
-                        anchor={{ x: 0.5, y: 1 }}
-                      >
-                        <View collapsable={false} style={styles.basecampMarkerIcon}>
-                          <Text style={styles.basecampMarkerEmoji}>BC</Text>
-                        </View>
-                      </NaverMapMarkerOverlay>
-                    ) : null}
-                    {basecampCoord && battleZoneRadius != null ? (
-                      <NaverMapCircleOverlay
-                        key="battle-zone"
-                        latitude={basecampCoord.latitude}
-                        longitude={basecampCoord.longitude}
-                        radius={battleZoneRadius}
-                        color="rgba(135, 206, 235, 0.28)"
-                        outlineWidth={3}
-                        outlineColor="rgba(135, 206, 235, 0.85)"
-                      />
-                    ) : null}
-                    {smoothMyCoordVal ? (
-                      <NaverMapMarkerOverlay
-                        key="marker-me"
-                        latitude={smoothMyCoordVal.latitude}
-                        longitude={smoothMyCoordVal.longitude}
-                        width={25}
-                        height={25}
-                        anchor={{ x: 0.5, y: 1 }}
-                      >
-                        <View collapsable={false} style={styles.thiefMarkerIcon}>
-                          <Text style={styles.markerEmoji}>🦹</Text>
-                        </View>
-                      </NaverMapMarkerOverlay>
-                    ) : null}
-                    {otherThiefCoords.map((thief) => {
-                      const isCaptured = thief.state === 'CAPTURED';
-                      const isJailed = thief.state === 'JAILED';
-                      const borderColor = isCaptured
-                        ? '#666'
-                        : isJailed
-                          ? '#FFAA00'
-                          : '#F9F871';
-                      const smoothCoord = getSmoothCoord(`player-${thief.playerId}`, {
-                        latitude: thief.latitude,
-                        longitude: thief.longitude,
-                      });
+            {/* 레이더 효과를 위한 베이스캠프 및 플레이어 마커 렌더링 */}
+            {basecampCoord ? (
+              <NaverMapMarkerOverlay
+                key="marker-basecamp"
+                latitude={basecampCoord.latitude}
+                longitude={basecampCoord.longitude}
+                width={32}
+                height={32}
+                anchor={{ x: 0.5, y: 0.5 }}
+              >
+                <View collapsable={false} style={styles.basecampMarkerIcon}>
+                  <Text style={styles.basecampMarkerEmoji}>감옥</Text>
+                </View>
+              </NaverMapMarkerOverlay>
+            ) : null}
 
-                      return (
-                        <NaverMapMarkerOverlay
-                          key={`marker-thief-${thief.playerId}`}
-                          latitude={smoothCoord.latitude}
-                          longitude={smoothCoord.longitude}
-                          width={25}
-                          height={25}
-                          anchor={{ x: 0.5, y: 1 }}
-                        >
-                          <View
-                            collapsable={false}
-                            style={[
-                              styles.thiefMarkerIcon,
-                              { borderColor },
-                              isCaptured && styles.thiefMarkerIconCaptured,
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.markerEmoji,
-                                isCaptured && styles.markerEmojiCaptured,
-                              ]}
-                            >
-                              🦹
-                            </Text>
-                          </View>
-                        </NaverMapMarkerOverlay>
-                      );
-                    })}
+            {basecampCoord && battleZoneRadius != null ? (
+              <NaverMapCircleOverlay
+                key="battle-zone"
+                latitude={basecampCoord.latitude}
+                longitude={basecampCoord.longitude}
+                radius={battleZoneRadius}
+                color="rgba(0, 255, 80, 0.08)"
+                outlineWidth={2}
+                outlineColor="rgba(0, 255, 80, 0.35)"
+              />
+            ) : null}
+
+            {/* 내 위치 블립 (레이더 타겟: 펄스 + 글로우) */}
+            {smoothMyCoordVal ? (
+              <NaverMapMarkerOverlay
+                key="marker-me"
+                latitude={smoothMyCoordVal.latitude}
+                longitude={smoothMyCoordVal.longitude}
+                width={28}
+                height={28}
+                anchor={{ x: 0.5, y: 0.5 }}
+              >
+                <View collapsable={false} style={styles.blipMe}>
+                  <Animated.View style={[styles.blipMeGlow, { transform: [{ scale: blipPulse }] }]} />
+                  <View style={styles.blipMeInner} />
+                </View>
+              </NaverMapMarkerOverlay>
+            ) : null}
+
+            {/* 도둑 블립 (레이더: 빨간 점 + 글로우) */}
+            {(isPolice ? policeVisibleThiefCoords : otherThiefCoords).map((thief) => {
+              const isCaptured = thief.state === 'CAPTURED';
+              const isJailed   = thief.state === 'JAILED';
+              const blipColor  = isCaptured ? '#555' : isJailed ? '#FFAA00' : '#FF4444';
+              const smoothCoord = getSmoothCoord(`player-${thief.playerId}`, {
+                latitude: thief.latitude,
+                longitude: thief.longitude,
+              });
+
+              return (
+                <NaverMapMarkerOverlay
+                  key={`marker-thief-${thief.playerId}`}
+                  latitude={smoothCoord.latitude}
+                  longitude={smoothCoord.longitude}
+                  width={20}
+                  height={20}
+                  anchor={{ x: 0.5, y: 0.5 }}
+                >
+                  <View collapsable={false} style={[styles.blipThief, styles.blipThiefGlow, { backgroundColor: blipColor, opacity: isCaptured ? 0.4 : 1 }]} />
+                </NaverMapMarkerOverlay>
+              );
+            })}
+
+            {/* 경찰 블립 (레이더: 파란 점 + 글로우) */}
+            {isPolice && policeVisiblePoliceCoords.map((police) => {
+              const smoothCoord = getSmoothCoord(`player-${police.playerId}`, {
+                latitude: police.latitude,
+                longitude: police.longitude,
+              });
+              return (
+                <NaverMapMarkerOverlay
+                  key={`marker-police-${police.playerId}`}
+                  latitude={smoothCoord.latitude}
+                  longitude={smoothCoord.longitude}
+                  width={20}
+                  height={20}
+                  anchor={{ x: 0.5, y: 0.5 }}
+                >
+                  <View collapsable={false} style={[styles.blipPolice, styles.blipPoliceGlow]} />
+                </NaverMapMarkerOverlay>
+              );
+            })}
                   </NaverMapView>
                 ) : (
                   <View style={styles.mapFallback}>
@@ -932,113 +824,259 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                     <Text style={styles.mapSubText}>위치 권한이 필요합니다</Text>
                   </View>
                 )}
-              </View>
-              <View
-                style={[styles.splitSquare, styles.splitSquareRight]}
-                onLayout={(event) => {
-                  const nextSize = Math.floor(
-                    Math.min(event.nativeEvent.layout.width, event.nativeEvent.layout.height),
-                  );
-                  if (nextSize > 60 && nextSize !== qrSize) {
-                    setQrSize(nextSize);
-                  }
-                }}
-              >
-                <View style={styles.qrPanel}>
-                  {playerId ? (
-                    <QRCodeView value={playerId} size={qrSize} showValue={false} padding={0} />
-                  ) : (
-                    <Text style={styles.qrPlaceholder}>QR 생성 중...</Text>
-                  )}
-                </View>
-              </View>
-            </View>
-            <View style={styles.listPanel}>
-              <Text style={styles.listTitle}>THIEVES</Text>
-              {thieves.length === 0 ? (
-                <Text style={styles.listEmpty}>도둑 없음</Text>
-              ) : (
-                <View style={styles.thievesListContainer}>
-                  {thieves.map((t: any) => {
-                    const isCaptured = t.thiefStatus?.state === 'CAPTURED';
-                    const isOutOfZone =
-                      t.thiefStatus?.state === 'OUT_OF_ZONE' || !!(t as any).outOfZoneAt;
-                    const label =
-                      t.thiefStatus?.state === 'CAPTURED'
-                        ? '검거됨'
-                        : t.thiefStatus?.state === 'JAILED'
-                          ? '감금됨'
-                          : isOutOfZone
-                            ? '탈락'
-                            : '자유';
-                    const isMe = t.playerId === playerId;
+
+                {/* 레이더 오버레이: 동심원, 스윕, 십자선 (원형 스코프 내부) */}
+                <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                  <View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0, 48, 16, 0.68)' }} />
+                  {[0.25, 0.5, 0.75, 1].map((r, i) => {
+                    const d = circleSize * r;
                     return (
                       <View
-                        key={t.playerId}
-                        style={[
-                          styles.listItem,
-                          styles.listItemGrid,
-                          styles.listItemReadOnly,
-                          isMe && styles.listItemMe,
-                          isCaptured && styles.listItemCaptured,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.listItemText,
-                            isCaptured && styles.listItemTextCaptured,
-                          ]}
-                        >
-                          {isMe ? `나 (${t.nickname})` : t.nickname}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.listItemBadge,
-                            t.thiefStatus?.state === 'CAPTURED' && styles.listItemBadgeCaptured,
-                            t.thiefStatus?.state === 'JAILED' && styles.listItemBadgeJailed,
-                            (t.thiefStatus?.state === 'OUT_OF_ZONE' || (t as any).outOfZoneAt) &&
-                            styles.listItemBadgeOutOfZone,
-                            t.thiefStatus?.state === 'FREE' &&
-                            !(t as any).outOfZoneAt &&
-                            styles.listItemBadgeFree,
-                          ]}
-                        >
-                          {label}
-                        </Text>
-                      </View>
+                        key={i}
+                        style={{
+                          position: 'absolute',
+                          width: d,
+                          height: d,
+                          borderRadius: d / 2,
+                          borderWidth: 1,
+                          borderColor: `rgba(0, 255, 100, ${0.15 + i * 0.04})`,
+                          left: (circleSize - d) / 2,
+                          top: (circleSize - d) / 2,
+                        }}
+                      />
                     );
                   })}
+                  <View style={{ position: 'absolute', top: radius - 0.5, left: 0, right: 0, height: 1, backgroundColor: 'rgba(0, 255, 100, 0.2)' }} />
+                  <View style={{ position: 'absolute', left: radius - 0.5, top: 0, bottom: 0, width: 1, backgroundColor: 'rgba(0, 255, 100, 0.2)' }} />
+                  {(() => {
+                    const armLen = radius;
+                    const armLeft = radius - 1;
+                    const translatePivot = armLen / 2;
+                    const makeArm = (rotate: Animated.AnimatedInterpolation<string>, opacity: number, w: number) => ({
+                      position: 'absolute' as const,
+                      top: 0,
+                      left: armLeft - (w - 2) / 2,
+                      width: w,
+                      height: armLen,
+                      opacity,
+                      backgroundColor: '#00FF64',
+                      transform: [
+                        { translateY: translatePivot },
+                        { rotate },
+                        { translateY: -translatePivot },
+                      ],
+                    });
+                    return (
+                      <>
+                        <Animated.View style={[makeArm(radarTrail3, 0.06, 14), {}]} />
+                        <Animated.View style={[makeArm(radarTrail2, 0.1, 10), {}]} />
+                        <Animated.View style={[makeArm(radarTrail1, 0.18, 6), {}]} />
+                        <Animated.View
+                          style={[makeArm(radarRotateStr, 0.85, 2), {
+                            shadowColor: '#00FF64',
+                            shadowOffset: { width: 0, height: 0 },
+                            shadowOpacity: 1,
+                            shadowRadius: 6,
+                            elevation: 4,
+                          }]}
+                        />
+                      </>
+                    );
+                  })()}
+                  <View style={{
+                    position: 'absolute',
+                    width: 10,
+                    height: 10,
+                    borderRadius: 5,
+                    backgroundColor: '#00FF64',
+                    left: radius - 5,
+                    top: radius - 5,
+                    opacity: 0.95,
+                  }} />
                 </View>
-              )}
-              <Text style={styles.listHint}>경찰을 피해 생존하세요</Text>
+              </View>
+              </View>
             </View>
-            <View style={styles.pttPanel}>
-              <TouchableOpacity
-                style={styles.pttButtonRound}
-                onPressIn={() => gameLogic.requestPTT()}
-                onPressOut={() => gameLogic.releasePTT()}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.pttButtonIcon}>📻</Text>
-              </TouchableOpacity>
-              {gameLogic.activePTT?.activeThiefNickname ? (
-                <Text style={styles.pttStatusText}>
-                  🔊 무전 중: {gameLogic.activePTT.activeThiefNickname}
-                </Text>
+          );
+        })()}
+
+        {/* 도둑 전용: 경찰 근접 시 위험 경고 (사이드 빨간 깜빡임) */}
+        {isPoliceNear && (
+          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+            <Animated.View style={[styles.dangerSideLeft, { opacity: dangerOpacity }]} />
+            <Animated.View style={[styles.dangerSideRight, { opacity: dangerOpacity }]} />
+            <Animated.View style={[styles.dangerBanner, { opacity: dangerOpacity }]}>
+              <Text style={styles.dangerBannerText}>⚠ 위험!</Text>
+            </Animated.View>
+          </View>
+        )}
+
+        {/* 마커 범례 (플로팅) - 경찰은 경찰/도둑/검거, 도둑은 나/도둑/검거만 */}
+        <View style={styles.floatingLegend}>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: '#00FF50', borderRadius: 6 }]} />
+            <Text style={styles.legendText}>나</Text>
+          </View>
+          {isPolice && (
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: '#3A8DFF', borderRadius: 3 }]} />
+              <Text style={styles.legendText}>경찰</Text>
+            </View>
+          )}
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: '#FF3B30', borderRadius: 3 }]} />
+            <Text style={styles.legendText}>도둑</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: '#666', borderRadius: 3 }]} />
+            <Text style={styles.legendText}>검거</Text>
+          </View>
+        </View>
+
+        {/* 도둑: 레이더 위 플로팅 (QR + 무전) */}
+        {!isPolice && (
+          <View style={styles.floatingControls}>
+            <View style={styles.qrFloatingCard}>
+              <Text style={styles.qrFloatingLabel}>내 QR</Text>
+              {playerId ? (
+                <QRCodeView value={playerId} size={56} showValue={false} padding={0} />
               ) : (
-                <Text style={styles.pttStatusText}>무전 대기</Text>
+                <Text style={styles.qrPlaceholder}>...</Text>
               )}
             </View>
-          </>
+            <TouchableOpacity
+              style={styles.pttFloatingButtonRound}
+              onPressIn={() => gameLogic.requestPTT()}
+              onPressOut={() => gameLogic.releasePTT()}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.pttFloatingIcon}>📻</Text>
+            </TouchableOpacity>
+            {gameLogic.activePTT?.activeThiefNickname && (
+              <Text style={styles.pttStatusText}>🔊 {gameLogic.activePTT.activeThiefNickname}</Text>
+            )}
+          </View>
         )}
       </View>
 
-      <View style={styles.bottomPanel}>
-        <Text style={styles.statusTitle}>MISSION: CAPTURE</Text>
-        <Text style={styles.statusDesc}>Find and capture all thieves.</Text>
-
-        <PixelButton text="게임 종료" variant="danger" size="large" onPress={onConfirmEndGame} />
+      {/* 하단 고정: QR 검거(경찰) / 잡힘(도둑) 버튼 */}
+      <View style={styles.bottomActionBar}>
+        {isPolice ? (
+          <TouchableOpacity
+            style={[styles.bottomActionButton, styles.bottomActionButtonPolice]}
+            onPress={() => {
+              isProcessingScanRef.current = false;
+              setQrScannerSession((v) => v + 1);
+              setQrScannerVisible(true);
+            }}
+            disabled={isPoliceHiding}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.bottomActionIcon}>📷</Text>
+            <Text style={styles.bottomActionLabel}>QR 검거</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={[styles.bottomActionButton, styles.bottomActionButtonThief]}
+            onPress={() => setCaughtModalVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.bottomActionIcon}>🤝</Text>
+            <Text style={styles.bottomActionLabel}>잡힘</Text>
+          </TouchableOpacity>
+        )}
       </View>
+
+      {/* 현황 하단 시트: 현황 카드 탭 시 아래에서 올라옴 */}
+      {isPanelExpanded && (
+        <TouchableOpacity style={styles.sheetOverlay} onPress={togglePanel} activeOpacity={1} />
+      )}
+      <Animated.View style={[styles.bottomSlidePanel, { height: panelHeightAnim }]}>
+        <TouchableOpacity style={styles.panelHandleWrap} onPress={togglePanel} activeOpacity={0.8}>
+          <View style={styles.panelHandle} />
+          <Text style={styles.panelHandleText}>▼ 닫기 ▼</Text>
+        </TouchableOpacity>
+
+        <ScrollView style={styles.panelScroll} contentContainerStyle={styles.panelScrollContent}>
+          <View style={styles.panelSection}>
+            <Text style={styles.panelSectionTitle}>THIEVES ({thieves.filter((t: any) => t.thiefStatus?.state === 'CAPTURED' || t.thiefStatus?.state === 'JAILED' || t.thiefStatus?.state === 'OUT_OF_ZONE' || !!t.outOfZoneAt).length} / {thieves.length})</Text>
+            {thieves.length === 0 ? (
+              <Text style={styles.listEmpty}>도둑 없음</Text>
+            ) : (
+              <View style={styles.thievesListContainer}>
+                {thieves.map((t: any) => {
+                  const isFree = t.thiefStatus?.state === 'FREE';
+                  const isCaptured = t.thiefStatus?.state === 'CAPTURED';
+                  const isJailed = t.thiefStatus?.state === 'JAILED';
+                  const isOutOfZone = t.thiefStatus?.state === 'OUT_OF_ZONE' || !!(t as any).outOfZoneAt;
+                  const canCapture = isPolice && status === 'CHASE' && isFree && !isPoliceHiding;
+                  const canRelease = isPolice && status === 'CHASE' && isCaptured && !isPoliceHiding;
+                  const canAction = canCapture || canRelease;
+                  const label = isCaptured ? '검거됨' : isJailed ? '감금됨' : isOutOfZone ? '탈락' : '자유';
+                  const isMe = t.playerId === playerId;
+
+                  return (
+                    <TouchableOpacity
+                      key={t.playerId}
+                      disabled={!isPolice || !canAction}
+                      onPress={() => {
+                        if (canCapture) gameLogic.attemptCapture(t.playerId);
+                        if (canRelease) gameLogic.attemptRelease(t.playerId);
+                      }}
+                      style={[
+                        styles.listItem,
+                        styles.listItemGrid,
+                        !isPolice && styles.listItemReadOnly,
+                        isPolice && !canAction && styles.listItemDisabled,
+                        isPolice && canAction && styles.listItemClickable,
+                        isCaptured && styles.listItemCaptured,
+                        isMe && styles.listItemMe,
+                      ]}
+                    >
+                      <Text style={[styles.listItemText, isCaptured && styles.listItemTextCaptured]}>
+                        {isMe ? `나 (${t.nickname})` : t.nickname}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.listItemBadge,
+                          t.thiefStatus?.state === 'CAPTURED' && styles.listItemBadgeCaptured,
+                          t.thiefStatus?.state === 'JAILED' && styles.listItemBadgeJailed,
+                          (t.thiefStatus?.state === 'OUT_OF_ZONE' || (t as any).outOfZoneAt) && styles.listItemBadgeOutOfZone,
+                          t.thiefStatus?.state === 'FREE' && !(t as any).outOfZoneAt && styles.listItemBadgeFree,
+                        ]}
+                      >
+                        {label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+
+          <View style={styles.panelSection}>
+            <Text style={styles.panelSectionTitle}>POLICE ({polices.length})</Text>
+            {polices.length === 0 ? (
+              <Text style={styles.listEmpty}>경찰 없음</Text>
+            ) : (
+              <View style={styles.thievesListContainer}>
+                {polices.map((p: any) => {
+                  const isMe = p.playerId === playerId;
+                  return (
+                    <View key={p.playerId} style={[styles.listItem, styles.listItemGrid, styles.listItemReadOnly, isMe && styles.listItemMe, { borderColor: '#3A8DFF' }]}>
+                      <Text style={styles.listItemText}>
+                        {isMe ? `나 (${p.nickname})` : p.nickname}
+                      </Text>
+                      <Text style={[styles.listItemBadge, { color: '#3A8DFF' }]}>경찰</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+          <View style={{ height: 20 }} />
+        </ScrollView>
+      </Animated.View>
 
       {isPolice && (
         <QRScanModal
@@ -1060,9 +1098,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               <Text style={styles.countdownText}>{hidingRemainingSec}</Text>
             </Animated.View>
             <Text style={styles.countdownSubtext}>
-              {isPolice
-                ? '경찰은 도둑이 숨을때 까지 대기해주세요!'
-                : '도둑! 빨리 숨고 도망가세요!'}
+              {isPolice ? '경찰은 도둑이 숨을때 까지 대기해주세요!' : '도둑! 빨리 숨고 도망가세요!'}
             </Text>
           </View>
         </View>
@@ -1085,7 +1121,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           </View>
         </View>
       )}
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -1133,6 +1169,92 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderWidth: 2,
     borderColor: '#fff',
+  },
+  hudEndGameButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#8B4513',
+    borderWidth: 1,
+    borderColor: '#654321',
+    borderRadius: 4,
+    gap: 4,
+  },
+  hudEndGameIcon: {
+    fontSize: 14,
+    color: '#fff',
+  },
+  hudEndGameText: {
+    fontSize: 11,
+    color: '#fff',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  statusCard: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 8,
+    backgroundColor: 'rgba(0, 20, 0, 0.9)',
+    borderWidth: 2,
+    borderColor: 'rgba(0, 255, 80, 0.4)',
+    borderRadius: 8,
+    padding: 12,
+  },
+  statusCardLeft: {
+    flex: 1,
+  },
+  statusCardRight: {
+    flex: 1,
+  },
+  statusCardLabel: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.8)',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+    marginBottom: 4,
+  },
+  statusCardTime: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  statusCardIndicators: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  statusIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    gap: 4,
+  },
+  statusIndicatorPolice: {
+    backgroundColor: 'rgba(58, 141, 255, 0.4)',
+    borderWidth: 1,
+    borderColor: '#3A8DFF',
+  },
+  statusIndicatorThief: {
+    backgroundColor: 'rgba(255, 59, 48, 0.4)',
+    borderWidth: 1,
+    borderColor: '#FF3B30',
+  },
+  statusIndicatorCaptured: {
+    backgroundColor: 'rgba(255, 200, 0, 0.4)',
+    borderWidth: 1,
+    borderColor: '#FFC800',
+  },
+  statusIndicatorEmoji: {
+    fontSize: 14,
+  },
+  statusIndicatorNum: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#fff',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
   hudText: {
     color: '#fff',
@@ -1437,20 +1559,20 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   basecampMarkerIcon: {
-    width: 26,
-    height: 26,
-    backgroundColor: 'transparent',
-    borderRadius: 4,
+    width: 28,
+    height: 28,
+    backgroundColor: 'rgba(0, 30, 0, 0.9)',
+    borderRadius: 2,
     borderWidth: 2,
-    borderColor: '#1B5E20',
+    borderColor: '#00FF64',
     justifyContent: 'center',
     alignItems: 'center',
   },
   basecampMarkerEmoji: {
-    fontSize: 8,
-    color: '#1B5E20',
-    fontWeight: '800',
-    letterSpacing: 0.5,
+    fontSize: 9,
+    color: '#00FF64',
+    fontWeight: '900',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
   legendBar: {
     flexDirection: 'row',
@@ -1472,8 +1594,290 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   legendText: {
-    color: '#fff',
+    color: '#00FF80',
     fontSize: 10,
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  // 레이더 블립 (마커)
+  blipMe: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'transparent',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  blipMeGlow: {
+    position: 'absolute',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0, 255, 100, 0.35)',
+    borderWidth: 2,
+    borderColor: 'rgba(0, 255, 100, 0.5)',
+  },
+  blipMeInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#00FF64',
+    zIndex: 1,
+  },
+  blipPolice: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#00A8FF',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 255, 255, 0.6)',
+  },
+  blipPoliceGlow: {
+    shadowColor: '#00A8FF',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  blipThief: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+  },
+  blipThiefGlow: {
+    shadowColor: '#FF4444',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  // ── 전체화면 맵 컨테이너 (레이더 스코프) ──
+  fullScreenMapContainer: {
+    flex: 1,
+    position: 'relative',
+    backgroundColor: '#000',
+    paddingBottom: 90, // 하단 QR검거/잡힘 버튼 공간
+  },
+  radarScopeWrapper: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  radarBezel: {
+    borderWidth: 4,
+    borderColor: 'rgba(0, 255, 100, 0.4)',
+    backgroundColor: 'rgba(0, 20, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  radarScopeCircle: {
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'rgba(0, 255, 100, 0.5)',
+    position: 'relative',
+  },
+  // ── 플로팅 범례 ──
+  floatingLegend: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: 'rgba(0, 10, 0, 0.75)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 255, 80, 0.4)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 3,
+  },
+  // ── 플로팅 컨트롤 (우하단) ──
+  floatingControls: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    alignItems: 'center',
+    gap: 8,
+  },
+  thiefControlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  floatingButtonWrap: {},
+  floatingButton: {
+    width: 52,
+    height: 52,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 2, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 0,
+    elevation: 4,
+  },
+  floatingButtonIcon: {
+    fontSize: 22,
+  },
+  floatingButtonLabel: {
+    fontSize: 9,
+    color: '#fff',
+    marginTop: 2,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  dangerSideLeft: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 36,
+    backgroundColor: 'rgba(255, 40, 40, 0.85)',
+  },
+  dangerSideRight: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 36,
+    backgroundColor: 'rgba(255, 40, 40, 0.85)',
+  },
+  dangerBanner: {
+    position: 'absolute',
+    top: '40%',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  dangerBannerText: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: '#FF3333',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+    textShadowColor: '#000',
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 2,
+  },
+  qrFloatingCard: {
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    borderWidth: 2,
+    borderColor: '#00FF50',
+    padding: 6,
+    alignItems: 'center',
+    borderRadius: 3,
+  },
+  qrFloatingLabel: {
+    color: '#00FF50',
+    fontSize: 9,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+    marginBottom: 3,
+  },
+  pttFloatingButtonRound: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#FF2D6A',
+    borderWidth: 3,
+    borderColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#FF2D6A',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.7,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  pttFloatingIcon: {
+    fontSize: 24,
+  },
+  sheetOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  bottomActionBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
+    paddingBottom: Platform.OS === 'ios' ? 28 : 16,
+    backgroundColor: 'rgba(0, 10, 0, 0.95)',
+    borderTopWidth: 2,
+    borderTopColor: 'rgba(0, 255, 80, 0.4)',
+  },
+  bottomActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 18,
+    borderRadius: 12,
+    gap: 10,
+    borderWidth: 3,
+    borderColor: '#000',
+  },
+  bottomActionButtonPolice: {
+    backgroundColor: '#00E5FF',
+  },
+  bottomActionButtonThief: {
+    backgroundColor: '#FF2D6A',
+  },
+  bottomActionIcon: {
+    fontSize: 28,
+  },
+  bottomActionLabel: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#000',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  // ── 하단 슬라이드 패널 ──
+  bottomSlidePanel: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 8, 0, 0.98)',
+    borderTopWidth: 2,
+    borderTopColor: 'rgba(0, 255, 80, 0.5)',
+    overflow: 'hidden',
+  },
+  panelHandleWrap: {
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 255, 80, 0.2)',
+  },
+  panelHandle: {
+    width: 36,
+    height: 3,
+    backgroundColor: 'rgba(0, 255, 80, 0.4)',
+    borderRadius: 2,
+    marginBottom: 3,
+  },
+  panelHandleText: {
+    color: '#00FF50',
+    fontSize: 10,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+    letterSpacing: 1,
+  },
+  panelScroll: {
+    flex: 1,
+  },
+  panelScrollContent: {
+    paddingBottom: 8,
+  },
+  panelSection: {
+    paddingHorizontal: 12,
+    paddingTop: 8,
+  },
+  panelSectionTitle: {
+    color: 'rgba(0, 255, 80, 0.8)',
+    fontSize: 11,
+    fontWeight: '900',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+    marginBottom: 6,
+    letterSpacing: 1,
   },
 });

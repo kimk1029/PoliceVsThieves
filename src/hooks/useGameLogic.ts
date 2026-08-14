@@ -27,7 +27,7 @@ export const useGameLogic = () => {
   const [webrtcReady, setWebrtcReady] = useState(false);
 
   const {playerId, nickname, team, updateLocation} = usePlayerStore();
-  const {roomId, players, settings, setRoomInfo, setPlayers, updatePlayer, addChatMessage} = useGameStore();
+  const {roomId, players, settings, status, setRoomInfo, setPlayers, updatePlayer, addChatMessage} = useGameStore();
 
   // 위치 업데이트 스로틀링 (깜빡임 방지)
   const locationUpdateTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
@@ -1240,37 +1240,43 @@ export const useGameLogic = () => {
     [isConnected, roomId, playerId, wsClient]
   );
 
-  // 앱 상태 모니터링: 포그라운드로 돌아올 때 자동 재연결
+  // 앱 상태 모니터링: 백그라운드 시 위치 추적 중단, 포그라운드 복귀 시 재개 + 재연결
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
       console.log('[GameLogic] AppState changed:', appStateRef.current, '->', nextAppState);
-      
+
+      // 포그라운드 → 백그라운드/비활성: 위치 추적만 중단 (세션/WebSocket 유지)
+      if (appStateRef.current === 'active' && nextAppState.match(/inactive|background/)) {
+        console.log('[GameLogic] App going to background, stopping location tracking (session kept)');
+        locationService.stopWatching();
+      }
+
       // 백그라운드에서 포그라운드로 돌아올 때
       if (
         appStateRef.current.match(/inactive|background/) &&
         nextAppState === 'active'
       ) {
         console.log('[GameLogic] App came to foreground, checking connection...');
-        
+
         // 기존 재연결 타이머 취소
         if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current);
           reconnectTimeoutRef.current = null;
         }
-        
-        // 잠시 대기 후 연결 상태 확인 및 재연결 시도
+
+        // 잠시 대기 후 연결 상태 확인 및 위치 추적 재개
         reconnectTimeoutRef.current = setTimeout(async () => {
           if (!playerId) {
             console.log('[GameLogic] No playerId, skipping reconnection');
             return;
           }
-          
+
           const isSocketConnected = wsClient.isConnected();
           console.log('[GameLogic] Socket connected:', isSocketConnected, 'State connected:', isConnected);
-          
+
           // 연결이 끊어져 있으면 재연결 시도
           if (!isSocketConnected || !isConnected) {
             console.log('[GameLogic] Connection lost, attempting to reconnect...');
@@ -1283,9 +1289,17 @@ export const useGameLogic = () => {
           } else {
             console.log('[GameLogic] Connection is still active');
           }
-        }, 1000); // 1초 후 재연결 시도 (앱이 완전히 활성화될 때까지 대기)
+
+          // 게임 중이면 위치 추적 재개 (백그라운드 권한 없이 포그라운드에서만 추적)
+          const currentStatus = useGameStore.getState().status;
+          const currentRoomId = useGameStore.getState().roomId;
+          if (currentRoomId && (currentStatus === 'HIDING' || currentStatus === 'CHASE')) {
+            console.log('[GameLogic] Resuming location tracking (foreground)');
+            startLocationTracking();
+          }
+        }, 1000);
       }
-      
+
       appStateRef.current = nextAppState;
     });
 
@@ -1295,7 +1309,7 @@ export const useGameLogic = () => {
         clearTimeout(reconnectTimeoutRef.current);
       }
     };
-  }, [playerId, isConnected, wsClient, connectToServer, roomId, nickname]);
+  }, [playerId, isConnected, wsClient, connectToServer, roomId, nickname, locationService, startLocationTracking]);
 
   // 정리
   useEffect(() => {

@@ -2,11 +2,16 @@
  * @format
  */
 
+import React from 'react';
 import {AppRegistry} from 'react-native';
+import {SafeAreaProvider, initialWindowMetrics} from 'react-native-safe-area-context';
 import App from './App';
 import {name as appName} from './app.json';
 
-// AdMob 초기화는 AdBanner 컴포넌트에서 처리
-// 여기서는 초기화하지 않아도 AdMob이 자동으로 초기화됨
+const AppWithSafeArea = () => (
+  <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+    <App />
+  </SafeAreaProvider>
+);
 
-AppRegistry.registerComponent(appName, () => App);
+AppRegistry.registerComponent(appName, () => AppWithSafeArea);

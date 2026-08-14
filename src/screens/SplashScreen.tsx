@@ -9,6 +9,7 @@ import {
   Platform,
   ImageBackground,
 } from 'react-native';
+import { useSafeAreaWithFallback } from '../hooks/useSafeAreaWithFallback';
 
 const {width} = Dimensions.get('window');
 
@@ -17,6 +18,7 @@ interface SplashScreenProps {
 }
 
 export const SplashScreen: React.FC<SplashScreenProps> = ({onFinish}) => {
+  const { safeTop, safeBottom } = useSafeAreaWithFallback();
   const [loadingText, setLoadingText] = useState('LOADING');
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
@@ -63,8 +65,11 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({onFinish}) => {
   const splashBg = require('../assets/images/copsbg.jpg');
 
   return (
-    <ImageBackground source={splashBg} style={styles.container} resizeMode="cover">
-      <StatusBar barStyle="light-content" backgroundColor="#120458" />
+    <ImageBackground
+      source={splashBg}
+      style={[styles.container, { paddingTop: safeTop, paddingBottom: safeBottom }]}
+      resizeMode="cover">
+      <StatusBar barStyle="light-content" backgroundColor="#120458" translucent={false} />
       
       {/* 반투명 오버레이 (텍스트 가독성 향상) */}
       <View style={styles.overlay} />

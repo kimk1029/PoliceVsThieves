@@ -6,5 +6,9 @@
         <!-- 배경색을 딥 블루로 설정하여 흰색 플래시 방지 -->
         <item name="android:windowBackground">@color/splash_background</item>
         <item name="android:statusBarColor">@color/splash_background</item>
+        <!-- 상태바가 콘텐츠와 겹치지 않도록: 투명 비활성화, 시스템바 영역 예약 -->
+        <item name="android:windowTranslucentStatus">false</item>
+        <item name="android:windowTranslucentNavigation">false</item>
+        <item name="android:fitsSystemWindows">true</item>
     </style>
 </resources>
