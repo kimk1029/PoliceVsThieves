@@ -69,3 +69,6 @@ android/app/src/main/res/raw/
 
 # testing
 /coverage
+
+# iOS 로컬 비밀 설정 (TURN 등)
+ios/Secrets.xcconfig
